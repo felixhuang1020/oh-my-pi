@@ -14,7 +14,7 @@ async def main():
     message = await models.complete_simple(
         model,
         Context(messages=[UserMessage(content="hello", timestamp=0)]),
-        SimpleStreamOptions(api_key="sk-120a2914135c4db7a4b3708a177a8cbb"),
+        SimpleStreamOptions(api_key=""),
     )
     print(message.content[0].text)
 
