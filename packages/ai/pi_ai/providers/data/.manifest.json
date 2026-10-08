@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 6,
+  "generatedAt": "2026-10-02T07:52:34.102Z",
+  "structureHash": "ea538d4c262e2e3de72397d627980f13e31554194c810ab6812752f7e6e4f4fa",
+  "files": {
+    "anthropic.json": "3ff00b68990382e42626ebd1b65dcc28ae3cad9e6faa8920331ba92f067f1b3a",
+    "deepseek.json": "8c6e0a542818cb76a807d00b2a765bdb78eaa328d1d3d3887d37c0fd433cf4ba",
+    "google.json": "c0f5a633e5e5a5044432db3e537f4bc674d4de18df09325c6349547fcc13cabe",
+    "minimax-cn.json": "f962c20ee6a6a342820f778e9dc363a18a524bf11998f6e2c57f2989915d62e5",
+    "minimax.json": "17a432f80d0ea6dd26eade80a4314250d3a855678601728a5f70dd8fa0d21dd2",
+    "moonshotai-cn.json": "6665952608417f001f5ddd4db9e9e043397e43579e23c916e8148e4a677908b6",
+    "moonshotai.json": "44da88fce54152e8f053fcb18e422c7ef0357f5306e965f1332f4d575e7f7587",
+    "openai.json": "87faafcdd168c9b6fdaef521137834a207437daf0d71641fd0a2f3dddf4d1ecb",
+    "xiaomi.json": "ea1ad215baade9a830c5d67bd611b1ff2ce8084e03d661fc74483485aee3cac9"
+  }
+}

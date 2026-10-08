@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pi-ai · example1.py 底层实现机制深度解析</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef2f9; --line:#d6ddea;
+    --fg:#1a2233; --fg-2:#4a5568; --fg-3:#7b8798;
+    --accent:#2f6feb; --accent-2:#7a5cf0;
+    --c-blue:#dce9ff; --c-blue-b:#5b8def;
+    --c-green:#d9f5e6; --c-green-b:#2fa96b;
+    --c-amber:#fdeed2; --c-amber-b:#e0a637;
+    --c-purple:#e8e1fd; --c-purple-b:#8b6ff0;
+    --c-rose:#fde2e7; --c-rose-b:#e2647f;
+    --c-teal:#d5f2f2; --c-teal-b:#2aa5a5;
+    --code-bg:#1e2733;
+    --shadow:0 1px 2px rgba(16,24,40,.06),0 8px 24px -12px rgba(16,24,40,.18);
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0e1420; --panel:#151d2b; --panel-2:#1b2536; --line:#2b3850;
+      --fg:#e8edf7; --fg-2:#a9b6cc; --fg-3:#7b8aa3;
+      --accent:#5b8def; --accent-2:#a48cf5;
+      --code-bg:#0b1119;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+    }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:40px 24px 90px}
+  header.hero{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    color:#fff;border-radius:18px;padding:34px 36px;margin-bottom:26px;box-shadow:var(--shadow);
+  }
+  header.hero h1{margin:0 0 8px;font-size:27px;letter-spacing:-.3px}
+  header.hero p{margin:0;opacity:.94;font-size:14.5px}
+  header.hero .chips{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+  header.hero .chip{
+    background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);
+    padding:3px 11px;border-radius:20px;font-size:12.5px;backdrop-filter:blur(4px);
+  }
+  nav.toc{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px 20px;margin-bottom:26px;box-shadow:var(--shadow);
+  }
+  nav.toc h2{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--fg-3)}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:30px}
+  nav.toc li{margin:3px 0;font-size:13.5px}
+  nav.toc a{color:var(--fg-2);text-decoration:none;border-bottom:1px dashed transparent}
+  nav.toc a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  section{
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:26px 28px;margin-bottom:24px;box-shadow:var(--shadow);
+  }
+  section>h2{
+    margin:0 0 6px;font-size:19px;letter-spacing:-.2px;display:flex;align-items:center;gap:10px;
+  }
+  section>h2 .idx{
+    display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;
+    border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    color:#fff;font-size:13px;font-weight:700;font-family:var(--mono);
+  }
+  section>.sub{color:var(--fg-3);font-size:13.5px;margin:0 0 20px}
+  h3{font-size:15.5px;margin:26px 0 10px;color:var(--fg)}
+  h3:first-of-type{margin-top:14px}
+  p{margin:10px 0}
+  code{
+    font-family:var(--mono);font-size:12.8px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:var(--accent-2);
+  }
+  pre{
+    background:var(--code-bg);color:#dfe7f3;border-radius:12px;padding:16px 18px;overflow:auto;
+    font-family:var(--mono);font-size:12.7px;line-height:1.7;border:1px solid #2c3a4e;
+  }
+  pre code{background:none;border:none;padding:0;color:inherit;font-size:inherit}
+  pre .cm{color:#7d8fa8}
+  pre .kw{color:#c792ea}
+  pre .st{color:#9ddb8b}
+  pre .fn{color:#82aaff}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.2px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel-2);font-weight:600;font-size:12.4px;color:var(--fg-2)}
+  tbody tr:nth-child(even){background:color-mix(in srgb,var(--panel-2) 55%,transparent)}
+  td code{font-size:12.2px}
+  .fig{margin:20px 0;border:1px solid var(--line);border-radius:14px;background:var(--panel-2);padding:14px;overflow:auto}
+  .fig svg{display:block;width:100%;height:auto;min-width:820px}
+  .fig figcaption{color:var(--fg-3);font-size:12.5px;margin-top:10px;text-align:center}
+  .callout{
+    border-left:4px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--panel));
+    border-radius:0 10px 10px 0;padding:12px 16px;margin:16px 0;font-size:13.6px;
+  }
+  .callout.warn{border-left-color:var(--c-amber-b);background:color-mix(in srgb,var(--c-amber-b) 12%,var(--panel))}
+  .callout.key{border-left-color:var(--c-green-b);background:color-mix(in srgb,var(--c-green-b) 11%,var(--panel))}
+  .callout b{color:var(--fg)}
+  ul.tight{margin:8px 0;padding-left:22px}
+  ul.tight li{margin:5px 0}
+  .badge{
+    display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
+    padding:1px 7px;border-radius:5px;border:1px solid;letter-spacing:.3px;
+  }
+  .b-blue{background:var(--c-blue);border-color:var(--c-blue-b);color:#17458f}
+  .b-green{background:var(--c-green);border-color:var(--c-green-b);color:#0f6b3e}
+  .b-amber{background:var(--c-amber);border-color:var(--c-amber-b);color:#8a5c05}
+  .b-purple{background:var(--c-purple);border-color:var(--c-purple-b);color:#4a2fae}
+  .b-rose{background:var(--c-rose);border-color:var(--c-rose-b);color:#a3243f}
+  .b-teal{background:var(--c-teal);border-color:var(--c-teal-b);color:#0d6b6b}
+  .flow{display:grid;gap:10px;margin:16px 0}
+  .step{
+    display:flex;gap:14px;align-items:flex-start;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:11px;padding:12px 15px;
+  }
+  .step .n{
+    flex:0 0 30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:700;font-size:13px;background:#fff;border:1.5px solid var(--line);color:var(--fg-2);
+  }
+  .step .body{flex:1;min-width:0}
+  .step .body .t{font-weight:600;font-size:14px;margin-bottom:3px}
+  .step .body .d{font-size:13px;color:var(--fg-2)}
+  .step .body .d code{font-size:12.1px}
+  footer{color:var(--fg-3);font-size:12.5px;text-align:center;padding:24px 0 0}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0;font-size:12.6px;color:var(--fg-2)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .legend i{width:14px;height:14px;border-radius:4px;border:1.5px solid;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>pi-ai · <code style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.35);color:#fff">packages/ai/examples/example1.py</code> 底层实现机制解析</h1>
+  <p>23 行示例代码 → 4 层抽象 → 9 个 provider → 1 次流式 HTTP 请求。以下完整还原它的执行路径、调用链、类关系与数据流转。</p>
+  <div class="chips">
+    <span class="chip">pi-ai 0.1.0（@earendil-works/pi-ai 的 Python 移植）</span>
+    <span class="chip">Python ≥ 3.14 · httpx · asyncio</span>
+    <span class="chip">9 providers / 4 chat APIs</span>
+    <span class="chip">本报告覆盖 20 664 行源码中的关键路径</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s0">示例代码与一句话结论</a></li>
+    <li><a href="#s1">分层架构图</a></li>
+    <li><a href="#s2">完整执行时序图（核心）</a></li>
+    <li><a href="#s3">三阶段执行逻辑详解</a></li>
+    <li><a href="#s4">三层 lazy_stream 嵌套机制</a></li>
+    <li><a href="#s5">类定义与关系图</a></li>
+    <li><a href="#s6">模块依赖图</a></li>
+    <li><a href="#s7">关键调用链清单</a></li>
+    <li><a href="#s8">数据流转图</a></li>
+    <li><a href="#s9">关键节点标注总表</a></li>
+  </ol>
+</nav>
+
+<!-- ============================ 0 ============================ -->
+<section id="s0">
+  <h2><span class="idx">0</span>示例代码与一句话结论</h2>
+  <p class="sub">先把被测对象完整摊开，再谈机制。</p>
+
+<pre><code><span class="cm"># packages/ai/examples/example1.py  —— 全文 23 行</span>
+<span class="kw">import</span> asyncio
+
+<span class="kw">from</span> pi_ai <span class="kw">import</span> create_models, SimpleStreamOptions
+<span class="kw">from</span> pi_ai.providers.all <span class="kw">import</span> all_providers
+<span class="kw">from</span> pi_ai.types <span class="kw">import</span> Context, UserMessage
+
+
+<span class="kw">async def</span> <span class="fn">main</span>():
+    models = <span class="fn">create_models</span>()                       <span class="cm"># ① 建注册表</span>
+    <span class="kw">for</span> provider <span class="kw">in</span> <span class="fn">all_providers</span>():            <span class="cm"># ② 造 9 个 provider</span>
+        models.<span class="fn">set_provider</span>(provider)              <span class="cm"># ③ 注册</span>
+
+    model = models.<span class="fn">get_model</span>(<span class="st">"deepseek"</span>, <span class="st">"deepseek-flash"</span>)   <span class="cm"># ④ 查模型</span>
+    message = <span class="kw">await</span> models.<span class="fn">complete_simple</span>(       <span class="cm"># ⑤ 发请求</span>
+        model,
+        <span class="fn">Context</span>(messages=[<span class="fn">UserMessage</span>(content=<span class="st">"hello"</span>, timestamp=<span class="st">0</span>)]),
+        <span class="fn">SimpleStreamOptions</span>(api_key=<span class="st">"sk-120a2914135c4db7a4b3708a177a8cbb"</span>),
+    )
+    <span class="fn">print</span>(message.content[<span class="st">0</span>].text)          <span class="cm"># ⑥ 取回文本</span>
+</code></pre>
+
+  <div class="callout key">
+    <b>一句话结论：</b>这段代码是「注册表模式 + 惰性代理 + 推送式事件流」的组合。它把「建 provider 表 → 查模型 → 发请求」三段职责分别交给
+    <code>ModelsImpl</code>（注册表 / 认证 / 分发）、<code>ProviderImpl</code>（按 <code>model.api</code> 选实现）、<code>LazyApi</code>（按需 import 适配器）三层。
+    真正发 HTTP 的是 <code>pi_ai/api/openai_responses.py</code>，所有「同步返回 stream、初始化在后台跑」的语义由 <code>lazy_stream</code> + <code>AssistantMessageEventStream</code> 提供。
+  </div>
+
+  <div class="callout warn">
+    <b>注意两处与「直觉」不同的设计：</b>
+    <ul class="tight">
+      <li><code>deepseek</code> 走的是 <b>openai-responses</b> 适配器（不是专用适配器）——见 <code>providers/deepseek.py</code> 的 <code>lazy_load("pi_ai.api.openai_responses")</code>。</li>
+      <li><code>complete_simple()</code> 内部调用的是同步方法 <code>stream_simple()</code> 再 <code>.result()</code> ——<b>「同步返回 + 异步结算」</b>，而不是一个直接的 async 请求函数。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section id="s1">
+  <h2><span class="idx">1</span>分层架构图</h2>
+  <p class="sub">自顶向下五层：应用 → 注册表 → provider 工厂 → API 适配器 → 传输/基础。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1080 560" role="img" aria-label="pi-ai 分层架构图">
+    <defs>
+      <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#6b7a90"/>
+      </marker>
+    </defs>
+
+    <!-- L5 应用层 -->
+    <rect x="14" y="14" width="1052" height="76" rx="12" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="32" y="40" font-size="12.5" font-weight="700" fill="#17458f" font-family="ui-monospace,monospace">L5 应用层</text>
+    <rect x="120" y="26" width="330" height="52" rx="9" fill="#fff" stroke="#5b8def"/>
+    <text x="285" y="50" font-size="13" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">examples/example1.py</text>
+    <text x="285" y="67" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">main() · asyncio.run()</text>
+    <rect x="680" y="26" width="370" height="52" rx="9" fill="#fff" stroke="#5b8def"/>
+    <text x="865" y="50" font-size="12.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">pi_ai/__init__.py</text>
+    <text x="865" y="67" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">__getattr__ 惰性导出（PEP 562）</text>
+
+    <!-- L4 注册表层 -->
+    <rect x="14" y="100" width="1052" height="96" rx="12" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.6"/>
+    <text x="32" y="126" font-size="12.5" font-weight="700" fill="#4a2fae" font-family="ui-monospace,monospace">L4 注册表层</text>
+    <rect x="120" y="112" width="300" height="72" rx="9" fill="#fff" stroke="#8b6ff0"/>
+    <text x="270" y="136" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">models.py · ModelsImpl</text>
+    <text x="270" y="155" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">create_models / set_provider</text>
+    <text x="270" y="171" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">get_model / complete_simple</text>
+    <rect x="440" y="112" width="290" height="72" rx="9" fill="#fff" stroke="#8b6ff0"/>
+    <text x="585" y="136" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">models.py · ProviderImpl</text>
+    <text x="585" y="155" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">create_provider / _dispatch</text>
+    <text x="585" y="171" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">get_models / stream_simple</text>
+    <rect x="750" y="112" width="300" height="72" rx="9" fill="#fff" stroke="#8b6ff0"/>
+    <text x="900" y="136" font-size="12" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">auth/resolve.py</text>
+    <text x="900" y="155" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">resolve_provider_auth</text>
+    <text x="900" y="171" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">三级优先级解析</text>
+
+    <!-- L3 工厂层 -->
+    <rect x="14" y="206" width="1052" height="96" rx="12" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.6"/>
+    <text x="32" y="232" font-size="12.5" font-weight="700" fill="#0f6b3e" font-family="ui-monospace,monospace">L3 provider 工厂层</text>
+    <rect x="120" y="218" width="240" height="72" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="240" y="242" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">providers/all.py</text>
+    <text x="240" y="261" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">all_providers() → 9 家</text>
+    <text x="240" y="277" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">_PROVIDER_FACTORIES</text>
+    <rect x="380" y="218" width="240" height="72" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="500" y="242" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">providers/deepseek.py</text>
+    <text x="500" y="261" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">deepseek_provider()</text>
+    <text x="500" y="277" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">base_url=api.deepseek.com</text>
+    <rect x="640" y="218" width="200" height="72" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="740" y="242" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">providers/catalog.py</text>
+    <text x="740" y="261" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">chat_model_catalog()</text>
+    <text x="740" y="277" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">@lru_cache</text>
+    <rect x="860" y="218" width="190" height="72" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="955" y="242" font-size="12" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">data/deepseek.json</text>
+    <text x="955" y="261" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">生成的模型目录</text>
+    <text x="955" y="277" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">chat:deepseek-flash</text>
+
+    <!-- L2 适配器层 -->
+    <rect x="14" y="312" width="1052" height="96" rx="12" fill="#fdeed2" stroke="#e0a637" stroke-width="1.6"/>
+    <text x="32" y="338" font-size="12.5" font-weight="700" fill="#8a5c05" font-family="ui-monospace,monospace">L2 API 适配器层</text>
+    <rect x="120" y="324" width="230" height="72" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="235" y="348" font-size="12.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">api/lazy.py</text>
+    <text x="235" y="367" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">LazyApi / lazy_stream</text>
+    <text x="235" y="383" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">lazy_load（动态 import）</text>
+    <rect x="370" y="324" width="250" height="72" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="495" y="348" font-size="12" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">api/openai_responses.py</text>
+    <text x="495" y="367" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">stream_simple / stream</text>
+    <text x="495" y="383" font-size="10.8" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">_build_params / _create_client</text>
+    <rect x="640" y="324" width="230" height="72" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="755" y="348" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">…_responses_shared.py</text>
+    <text x="755" y="367" font-size="10.5" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">convert_responses_messages</text>
+    <text x="755" y="383" font-size="10.5" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">process_responses_stream</text>
+    <rect x="890" y="324" width="160" height="72" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="970" y="348" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">api/simple_options.py</text>
+    <text x="970" y="367" font-size="10.5" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">build_base_options</text>
+    <text x="970" y="383" font-size="10.5" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">max_tokens 钳制</text>
+
+    <!-- L1 基础层 -->
+    <rect x="14" y="418" width="1052" height="128" rx="12" fill="#d5f2f2" stroke="#2aa5a5" stroke-width="1.6"/>
+    <text x="32" y="444" font-size="12.5" font-weight="700" fill="#0d6b6b" font-family="ui-monospace,monospace">L1 传输 / 基础层</text>
+    <rect x="120" y="430" width="150" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="195" y="450" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/http.py</text>
+    <text x="195" y="466" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">create_client</text>
+    <rect x="285" y="430" width="150" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="360" y="450" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/sse.py</text>
+    <text x="360" y="466" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">SSE 解码</text>
+    <rect x="450" y="430" width="180" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="540" y="450" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/event_stream.py</text>
+    <text x="540" y="466" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">EventStream / push / result</text>
+    <rect x="645" y="430" width="150" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="720" y="450" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/retry.py</text>
+    <text x="720" y="466" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">retry_provider_request</text>
+    <rect x="810" y="430" width="240" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="930" y="450" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/transcript.py · estimate.py</text>
+    <text x="930" y="466" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">normalize_context · token 估算</text>
+    <rect x="120" y="486" width="470" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="355" y="506" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">utils/abort.py · AbortSignal / operation_signal / race_with_abort_signal</text>
+    <text x="355" y="522" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">贯穿全链路的取消语义</text>
+    <rect x="605" y="486" width="445" height="46" rx="8" fill="#fff" stroke="#2aa5a5"/>
+    <text x="827" y="506" font-size="11.5" font-weight="700" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">types.py · Model / Context / AssistantMessage / SimpleStreamOptions</text>
+    <text x="827" y="522" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">全项目共用的数据中心</text>
+
+    <!-- 层间箭头 -->
+    <line x1="285" y1="90" x2="285" y2="110" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="285" y1="196" x2="285" y2="216" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="585" y1="196" x2="585" y2="216" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="585" y1="302" x2="585" y2="322" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar)"/>
+    <line x1="355" y1="408" x2="355" y2="428" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar)"/>
+  </svg>
+  <figcaption>图 1 · 五层架构。控制流自 L5 向下渗透，每一层只依赖紧邻的下一层抽象；<code>types.py</code> 与 <code>utils/abort.py</code> 被所有层共享。</figcaption>
+  </div>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section id="s2">
+  <h2><span class="idx">2</span>完整执行时序图（核心）</h2>
+  <p class="sub">7 条生命线、24 个消息步骤，从 <code>main()</code> 首行到 <code>print()</code> 收尾。虚线竖线为生命线，实线箭头为调用，回折箭头为返回。<span class="badge b-amber">后台</span> 标记的步骤运行在 <code>asyncio.ensure_future</code> 派生的任务里。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1090 1140" role="img" aria-label="example1.py 执行时序图">
+    <defs>
+      <marker id="ar2" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+        <path d="M0,0 L7.5,3 L0,6 z" fill="#3b6fd4"/>
+      </marker>
+      <marker id="ar2b" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+        <path d="M0,0 L7.5,3 L0,6 z" fill="#2fa96b"/>
+      </marker>
+    </defs>
+
+    <!-- 生命线表头 -->
+    <g font-family="ui-monospace,monospace" font-size="10.5">
+      <rect x="18" y="14" width="106" height="42" rx="8" fill="#dce9ff" stroke="#5b8def" stroke-width="1.5"/>
+      <text x="71" y="33" text-anchor="middle" font-weight="700" fill="#17458f" font-size="11">example1.py</text>
+      <text x="71" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">main()</text>
+
+      <rect x="168" y="14" width="108" height="42" rx="8" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.5"/>
+      <text x="222" y="33" text-anchor="middle" font-weight="700" fill="#4a2fae" font-size="11">ModelsImpl</text>
+      <text x="222" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">models.py</text>
+
+      <rect x="320" y="14" width="108" height="42" rx="8" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.5"/>
+      <text x="374" y="33" text-anchor="middle" font-weight="700" fill="#4a2fae" font-size="11">ProviderImpl</text>
+      <text x="374" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">deepseek</text>
+
+      <rect x="472" y="14" width="108" height="42" rx="8" fill="#fdeed2" stroke="#e0a637" stroke-width="1.5"/>
+      <text x="526" y="33" text-anchor="middle" font-weight="700" fill="#8a5c05" font-size="11">LazyApi</text>
+      <text x="526" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">api/lazy.py</text>
+
+      <rect x="624" y="14" width="118" height="42" rx="8" fill="#fdeed2" stroke="#e0a637" stroke-width="1.5"/>
+      <text x="683" y="33" text-anchor="middle" font-weight="700" fill="#8a5c05" font-size="10.5">openai_responses</text>
+      <text x="683" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">api/</text>
+
+      <rect x="786" y="14" width="120" height="42" rx="8" fill="#d5f2f2" stroke="#2aa5a5" stroke-width="1.5"/>
+      <text x="846" y="33" text-anchor="middle" font-weight="700" fill="#0d6b6b" font-size="10.5">EventStream</text>
+      <text x="846" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">utils/event_stream.py</text>
+
+      <rect x="950" y="14" width="122" height="42" rx="8" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.5"/>
+      <text x="1011" y="33" text-anchor="middle" font-weight="700" fill="#0f6b3e" font-size="11">httpx / 网络</text>
+      <text x="1011" y="48" text-anchor="middle" fill="#41506b" font-size="9.5">api.deepseek.com</text>
+    </g>
+
+    <!-- 生命线 -->
+    <g stroke="#9aa8bd" stroke-width="1.2" stroke-dasharray="4 5">
+      <line x1="71" y1="58" x2="71" y2="1050"/>
+      <line x1="222" y1="58" x2="222" y2="1050"/>
+      <line x1="374" y1="58" x2="374" y2="1050"/>
+      <line x1="526" y1="58" x2="526" y2="1050"/>
+      <line x1="683" y1="58" x2="683" y2="1050"/>
+      <line x1="846" y1="58" x2="846" y2="1050"/>
+      <line x1="1011" y1="58" x2="1011" y2="1050"/>
+    </g>
+
+    <g font-family="ui-monospace,monospace" font-size="10.5">
+      <!-- 1 -->
+      <line x1="71" y1="92" x2="215" y2="92" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="76" y="88" fill="#1a2233">① create_models() → ModelsImpl.__init__</text>
+      <text x="228" y="88" fill="#7b8798" font-size="9.5">建 4 个注入点：_providers / _credentials / _models_store / _auth_context</text>
+
+      <!-- 2 -->
+      <line x1="71" y1="126" x2="367" y2="126" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="76" y="122" fill="#1a2233">② all_providers() → 9 个工厂 × create_provider</text>
+
+      <!-- 3 note on ProviderImpl -->
+      <rect x="258" y="138" width="238" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="377" y="157" text-anchor="middle" fill="#7a5205" font-size="10">ProviderImpl.__init__：single=_single LazyApi</text>
+      <line x1="374" y1="126" x2="374" y2="138" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 4 -->
+      <line x1="380" y1="184" x2="519" y2="184" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="384" y="180" fill="#1a2233">③ lazy_api(lazy_load("pi_ai.api.openai_responses"))</text>
+      <text x="530" y="180" fill="#7b8798" font-size="9.5">不 import，仅登记 loader</text>
+
+      <!-- 5 note on ProviderImpl -->
+      <rect x="248" y="196" width="250" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="373" y="215" text-anchor="middle" fill="#7a5205" font-size="10">④ chat_model_catalog("deepseek") 读 JSON</text>
+      <line x1="374" y1="184" x2="374" y2="196" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 6 -->
+      <line x1="71" y1="242" x2="215" y2="242" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="76" y="238" fill="#1a2233">⑤ set_provider(p) ×9</text>
+      <rect x="228" y="232" width="420" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="438" y="251" text-anchor="middle" fill="#7a5205" font-size="10">_supersede_provider_refresh(id)（代次 +1、abort 旧刷新）→ _providers[id] = p</text>
+
+      <!-- 7 -->
+      <line x1="71" y1="288" x2="215" y2="288" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="76" y="284" fill="#1a2233">⑥ get_model("deepseek","deepseek-flash")</text>
+      <line x1="228" y1="302" x2="367" y2="302" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="234" y="298" fill="#1a2233" font-size="10">get_models → _current_models（baseline ∪ dynamic）</text>
+
+      <!-- 8 -->
+      <line x1="71" y1="336" x2="215" y2="336" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="76" y="332" fill="#1a2233">⑦ complete_simple(model, Context, SimpleStreamOptions)</text>
+
+      <!-- 9 note ModelsImpl -->
+      <rect x="120" y="348" width="218" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="229" y="367" text-anchor="middle" fill="#7a5205" font-size="10">⑧ normalize_context → TranscriptContext</text>
+      <line x1="222" y1="336" x2="222" y2="348" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 10 -->
+      <line x1="228" y1="394" x2="839" y2="394" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="234" y="390" fill="#1a2233">⑨ lazy_stream(model, setup) 创建外层 stream</text>
+      <text x="640" y="408" fill="#7b8798" font-size="9.5">★ 立即返回，不同步执行任何东西</text>
+
+      <!-- 11 -->
+      <line x1="76" y1="440" x2="839" y2="440" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="82" y="436" fill="#1a2233">⑩ .result() 注册 result future（此时未就绪）</text>
+
+      <!-- 12 background divider -->
+      <line x1="20" y1="462" x2="1070" y2="462" stroke="#c9d3e3" stroke-width="1" stroke-dasharray="6 5"/>
+      <rect x="20" y="450" width="120" height="24" rx="7" fill="#fdeed2" stroke="#e0a637"/>
+      <text x="80" y="466" text-anchor="middle" fill="#8a5c05" font-size="10.5" font-weight="700">后台任务开始 ▶</text>
+
+      <!-- 13 setup -->
+      <rect x="120" y="482" width="250" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="245" y="501" text-anchor="middle" fill="#7a5205" font-size="10">⑪ setup()：_require_chat_provider + _apply_auth</text>
+      <line x1="222" y1="478" x2="222" y2="482" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 14 -->
+      <rect x="420" y="522" width="360" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="600" y="541" text-anchor="middle" fill="#7a5205" font-size="10">⑫ resolve_provider_auth → EnvApiKeyAuth.resolve → AuthResult</text>
+      <line x1="222" y1="516" x2="600" y2="516" stroke="#e0a637" stroke-width="1.2"/>
+      <line x1="600" y1="516" x2="600" y2="522" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 15 -->
+      <line x1="228" y1="582" x2="367" y2="582" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="234" y="578" fill="#1a2233">⑬ provider.stream_simple(request_model, transcript, request_options)</text>
+
+      <!-- 16 -->
+      <line x1="380" y1="616" x2="519" y2="616" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="384" y="612" fill="#1a2233" font-size="10">⑭ _dispatch → _api_for(model) 取到 LazyApi</text>
+
+      <!-- 17 -->
+      <line x1="532" y1="650" x2="839" y2="650" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="538" y="646" fill="#1a2233" font-size="10">⑮ LazyApi.stream_simple → lazy_stream（第 2 层）</text>
+
+      <!-- 18 -->
+      <line x1="532" y1="690" x2="676" y2="690" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="538" y="686" fill="#1a2233" font-size="10">⑯ importlib.import_module → 模块已加载</text>
+      <text x="690" y="686" fill="#7b8798" font-size="9.5">首次才真正 import</text>
+
+      <!-- 19 -->
+      <rect x="560" y="706" width="240" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="680" y="725" text-anchor="middle" fill="#7a5205" font-size="10">⑰ stream_simple → build_base_options</text>
+      <line x1="683" y1="700" x2="683" y2="706" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 20 -->
+      <line x1="689" y1="764" x2="1004" y2="764" stroke="#2fa96b" stroke-width="1.6" marker-end="url(#ar2b)"/>
+      <text x="695" y="760" fill="#0f6b3e" font-size="10">⑱ POST /responses（httpx stream=True）</text>
+      <line x1="1004" y1="792" x2="689" y2="792" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="695" y="788" fill="#1a2233" font-size="10">返回 SSE 响应头（202/200）</text>
+
+      <!-- 21 -->
+      <line x1="689" y1="826" x2="839" y2="826" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="695" y="822" fill="#1a2233" font-size="10">⑲ push(start_event)</text>
+      <line x1="1004" y1="858" x2="689" y2="858" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="695" y="854" fill="#1a2233" font-size="10">⑳ SSE data: 负载（json.loads 逐条）</text>
+
+      <!-- 22 -->
+      <rect x="560" y="876" width="290" height="30" rx="7" fill="#fffbe8" stroke="#e0a637"/>
+      <text x="705" y="895" text-anchor="middle" fill="#7a5205" font-size="10">㉑ process_responses_stream 折叠进 output</text>
+      <line x1="683" y1="870" x2="683" y2="876" stroke="#e0a637" stroke-width="1.2"/>
+
+      <!-- 23 -->
+      <line x1="689" y1="930" x2="839" y2="930" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="695" y="926" fill="#1a2233" font-size="10">㉒ push(text_delta_event … ) ×N</text>
+
+      <!-- 24 -->
+      <line x1="689" y1="964" x2="839" y2="964" stroke="#3b6fd4" stroke-width="1.5" marker-end="url(#ar2)"/>
+      <text x="695" y="960" fill="#1a2233" font-size="10">㉓ push(done_event(stop, output)) + end()</text>
+      <rect x="856" y="972" width="210" height="28" rx="7" fill="#e2f7ec" stroke="#2fa96b"/>
+      <text x="961" y="990" text-anchor="middle" fill="#0f6b3e" font-size="10">_settle() → 结算 result future ★</text>
+
+      <!-- 25 -->
+      <line x1="839" y1="1024" x2="76" y2="1024" stroke="#3b6fd4" stroke-width="1.8" marker-end="url(#ar2)"/>
+      <text x="380" y="1020" fill="#1a2233">㉔ result() 返回 AssistantMessage（含 content[0].text）</text>
+
+      <!-- 26 -->
+      <rect x="20" y="1000" width="52" height="0" fill="none"/>
+      <text x="82" y="1044" fill="#1a2233" font-size="10.5">print(message.content[0].text)</text>
+    </g>
+  </svg>
+  <figcaption>图 2 · 完整执行时序。①②③④⑤ 在事件循环的第一个 tick 内同步完成；⑥⑦ 之后进入异步区；⑨ 与 ⑮ 是两个「立即返回」的惰性边界；⑳/㉓ 是数据与结果的交汇点。</figcaption>
+  </div>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section id="s3">
+  <h2><span class="idx">3</span>三阶段执行逻辑详解</h2>
+  <p class="sub">把上面 24 步归并成三个语义阶段：构建注册表 → 解析模型 → 请求与结算。</p>
+
+  <h3>阶段 A · 构建注册表（<code>create_models</code> + <code>all_providers</code> + <code>set_provider</code>）</h3>
+  <p><code>create_models()</code> 是 <code>ModelsImpl.__init__</code> 的薄封装，它把四个可替换的协作者一次性装配好并全部留出「注入点」（<code>CreateModelsOptions</code>）：</p>
+
+  <table>
+    <thead><tr><th>字段</th><th>默认实现</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td><code>_providers</code></td><td><code>{}</code>（dict）</td><td>provider id → <code>ProviderImpl</code> 的注册表</td></tr>
+      <tr><td><code>_credentials</code></td><td><code>InMemoryCredentialStore</code></td><td>已存储凭据的读写（登录 / 登出也走它）</td></tr>
+      <tr><td><code>_models_store</code></td><td><code>InMemoryModelsStore</code></td><td>动态模型目录的持久化快照</td></tr>
+      <tr><td><code>_auth_context</code></td><td><code>default_provider_auth_context()</code></td><td>环境变量 / 环境文件的读取入口</td></tr>
+      <tr><td colspan="3"><code>_refresh_generations</code> / <code>_refresh_controllers</code> / <code>_publication_chains</code>：三个 per-provider 的 dict，实现「代次校验取消 + 发布串行化」</td></tr>
+    </tbody>
+  </table>
+
+  <p><code>all_providers()</code> 等价于 TS 版 <code>builtinProviders()</code>：按 <code>types.KNOWN_PROVIDERS</code> 的顺序，从 <code>_PROVIDER_FACTORIES</code> 逐家调用工厂，共 9 家 —— <code>anthropic / google / openai / deepseek / minimax / minimax-cn / moonshotai / moonshotai-cn / xiaomi</code>。其中与本次示例相关的是：</p>
+
+<pre><code><span class="cm"># providers/deepseek.py（全文 28 行）</span>
+<span class="kw">def</span> <span class="fn">deepseek_provider</span>() -&gt; ProviderImpl:
+    <span class="kw">return</span> <span class="fn">create_provider</span>(
+        <span class="fn">CreateProviderOptions</span>(
+            id=<span class="st">"deepseek"</span>,
+            name=<span class="st">"DeepSeek"</span>,
+            base_url=<span class="st">"https://api.deepseek.com"</span>,                  <span class="cm"># ← 备用 base_url</span>
+            auth=<span class="fn">ProviderAuth</span>(api_key=<span class="fn">env_api_key_auth</span>(<span class="st">"DeepSeek API key"</span>, [<span class="st">"DEEPSEEK_API_KEY"</span>])),
+            models=<span class="fn">list</span>(<span class="fn">chat_model_catalog</span>(<span class="st">"deepseek"</span>).<span class="fn">values</span>()),      <span class="cm"># ← 静态基线模型</span>
+            api=<span class="fn">lazy_api</span>(<span class="fn">lazy_load</span>(<span class="st">"pi_ai.api.openai_responses"</span>)),      <span class="cm"># ← 关键：不 import</span>
+        )
+    )
+</code></pre>
+
+  <p><code>create_provider()</code> 直接返回 <code>ProviderImpl(options)</code>。构造函数里有三个值得记住的判断：</p>
+  <ul class="tight">
+    <li><code>single = options.api if hasattr(options.api, "stream") else None</code> —— 因为 <code>LazyApi</code> 实现了 <code>stream</code>，所以它被认定为「一个实现服务所有模型」的单一实现；否则按 <code>model.api</code> 建映射。</li>
+    <li>基线模型 <code>_baseline_models = list(options.models)</code>，动态覆盖层 <code>_dynamic_models = []</code> —— 二者是<b>两层</b>，不是一层。</li>
+    <li>只有当某个实现声明了 <code>fetch_deferred</code> / <code>cancel_deferred</code> 时，才把对应方法挂到实例上，否则属性根本不存在（配合 <code>getattr(..., None)</code> 探测）。</li>
+  </ul>
+
+  <p><code>chat_model_catalog("deepseek")</code> 带 <code>@lru_cache</code>，链路是 <code>load_provider_data("deepseek")</code>（读 <code>providers/data/deepseek.json</code>）→ <code>flatten_chat_model_catalog</code> → <code>from_json(Model, ...)</code>。该 JSON 的实际内容如下（已核实）：</p>
+
+  <table>
+    <thead><tr><th>模型 id</th><th>name</th><th>api</th><th>provider</th><th>baseUrl</th><th>contextWindow</th><th>maxTokens</th><th>reasoning</th></tr></thead>
+    <tbody>
+      <tr><td><code>deepseek-flash</code></td><td>DeepSeek V4.1 Flash</td><td><code>openai-responses</code></td><td><code>deepseek</code></td><td>https://api.deepseek.com</td><td>1 000 000</td><td>384 000</td><td>true</td></tr>
+      <tr><td><code>deepseek-v4-pro</code></td><td colspan="6">（同一 JSON 分组内的另一条 chat 模型）</td></tr>
+    </tbody>
+  </table>
+
+  <p><code>set_provider()</code> 只有两行，但第一行是整套并发安全设计的关键：</p>
+  <ul class="tight">
+    <li><code>_supersede_provider_refresh(provider.id)</code> —— 把该 provider 的刷新代次 <b>+1</b>，并 <code>abort()</code> 掉上一轮仍在跑的刷新控制器。这就让任何「旧代次的发布」在 <code>_publish_provider_models</code> 里被代次校验直接丢弃。</li>
+    <li><code>self._providers[provider.id] = provider</code> —— 按 id 做 upsert，因此重复调用 <code>set_provider</code> 是幂等替换。</li>
+  </ul>
+
+  <h3>阶段 B · 解析模型（<code>get_model</code>）</h3>
+  <p>同步方法，三次跳转：<code>get_model("deepseek","deepseek-flash")</code> → <code>get_models("deepseek")</code> → <code>ProviderImpl.get_models()</code> → <code>_current_models()</code>。合并规则是「类型与 id 都相同则原地替换基线条目，否则追加」：</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">_current_models</span>(self) -&gt; list[AnyModel]:
+    merged = list(self._baseline_models)              <span class="cm"># ① JSON 目录里的静态模型</span>
+    <span class="kw">for</span> model <span class="kw">in</span> self._dynamic_models:            <span class="cm"># ② refresh_models 拉到的动态覆盖</span>
+        index = next((p <span class="kw">for</span> p, e <span class="kw">in</span> <span class="fn">enumerate</span>(merged)
+                      <span class="kw">if</span> <span class="fn">get_model_type</span>(e) == <span class="fn">get_model_type</span>(model) <span class="kw">and</span> e.id == model.id), -1)
+        <span class="kw">if</span> index &gt;= 0: merged[index] = model        <span class="cm"># 覆盖</span>
+        <span class="kw">else</span>:         merged.<span class="fn">append</span>(model)         <span class="cm"># 新增</span>
+    <span class="kw">return</span> merged
+</code></pre>
+
+  <p>本示例未调用 <code>models.refresh()</code>，所以 <code>_dynamic_models</code> 为空，命中项直接来自 JSON 基线。</p>
+
+  <h3>阶段 C · 请求与结算（<code>complete_simple</code>）</h3>
+  <div class="flow">
+    <div class="step"><div class="n">C1</div><div class="body"><div class="t">transcript = normalize_context(context)</div><div class="d"><code>Context</code> 的 <code>system_prompt</code>/<code>tools</code> 被折叠成一条前导 <code>SystemMessage</code>；本示例两者皆空，故 <code>TranscriptContext.messages == [UserMessage("hello")]</code>。该函数是生成 <code>TranscriptContext</code> 的<b>唯一入口</b>，且对已规范化的输入幂等。</div></div></div>
+
+    <div class="step"><div class="n">C2</div><div class="body"><div class="t">lazy_stream(model, setup) —— 第一层惰性</div><div class="d">立即构造 <code>AssistantMessageEventStream</code> 并 <code>ensure_future(run())</code>，然后<b>同步返回</b>。调用方拿到的不是数据，而是一个「稍后会被填满的流」。</div></div></div>
+
+    <div class="step"><div class="n">C3</div><div class="body"><div class="t">setup(): _require_chat_provider + _apply_auth</div><div class="d"><code>_require_chat_provider</code> 先 <code>assert_chat_model</code> 再用 <code>model.provider</code> 取 provider。<code>_apply_auth</code> 是认证注入的<b>唯一收口</b>：解析认证 → 合并 <code>api_key</code> / <code>headers</code> / <code>env</code> → 若解析结果带 <code>base_url</code> 则 <code>replace(model, base_url=...)</code>，最后 <code>replace(options, ...)</code> 产出 <code>request_options</code>。</div></div></div>
+
+    <div class="step"><div class="n">C4</div><div class="body"><div class="t">provider.stream_simple → _dispatch → _api_for(model)</div><div class="d"><code>_api_for</code> 返回 <code>_single</code>（即 <code>LazyApi</code>）；若为 <code>None</code> 则返回一个「首次消费即抛错」的惰性流，把配置错误也统一编码进事件流而不是抛异常。</div></div></div>
+
+    <div class="step"><div class="n">C5</div><div class="body"><div class="t">LazyApi.stream_simple —— 第二层惰性</div><div class="d">又套一层 <code>lazy_stream</code>；<code>setup</code> 里才 <code>importlib.import_module("pi_ai.api.openai_responses")</code>。<b>这就是「import 几千行 adapter」的代价被推迟到首次请求的原因。</b></div></div></div>
+
+    <div class="step"><div class="n">C6</div><div class="body"><div class="t">openai_responses.stream_simple → stream() —— 第三层惰性</div><div class="d"><code>stream_simple</code> 先用 <code>build_base_options</code> 把 provider 无关选项投影为 <code>OpenAIResponsesOptions</code>，随后 <code>stream()</code> 再建一个 <code>AssistantMessageEventStream</code> 并 <code>ensure_future(run())</code>。</div></div></div>
+
+    <div class="step"><div class="n">C7</div><div class="body"><div class="t">run(): HTTP + SSE 折叠</div><div class="d"><code>_create_client</code> 造 <code>httpx.AsyncClient</code>（含 <code>Authorization: Bearer …</code>、<code>User-Agent</code>、会话粘性头）→ <code>_build_params</code> 造请求体 → <code>retry_provider_request(send_streaming_request)</code> 发 POST → <code>push(start_event)</code> → <code>process_responses_stream(iter_stream_payloads(response))</code> 逐条折叠 → <code>push(done_event)</code> + <code>end()</code>。</div></div></div>
+
+    <div class="step"><div class="n">C8</div><div class="body"><div class="t">await ….result() 取回结果</div><div class="d"><code>done_event</code> 被 <code>push</code> 时，<code>_is_terminal_event</code> 判定其为终止事件 → <code>_settle(_extract_final_message(event))</code> → 取出 <code>event.message</code>，唤醒所有 result future。于是 <code>complete_simple</code> 的 <code>await</code> 得到完整的 <code>AssistantMessage</code>。</div></div></div>
+  </div>
+
+  <div class="callout">
+    <b>为什么用 simple 而不是普通 stream？</b> <code>SimpleStreamOptions</code> 是 <code>StreamOptions</code> 的<b>超集</b>，多出 <code>tool_choice / reasoning / deferred / thinking_budgets</code> 四个 provider 无关字段。<code>_apply_auth</code> 的注释明确指出：chat 路径刻意用 <code>SimpleStreamOptions</code> 作为兜底对象，因为 adapter 可能读取只存在于 simple 类型的字段——Python 下若不提供会抛 <code>AttributeError</code> 而非像 TS 那样得到 <code>undefined</code>。
+  </div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section id="s4">
+  <h2><span class="idx">4</span>三层 <code>lazy_stream</code> 嵌套机制</h2>
+  <p class="sub">这是本示例最容易被忽略、也最关键的结构：三次「同步返回 + 后台填充」的叠加。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1080 470" role="img" aria-label="三层 lazy_stream 嵌套图">
+    <defs>
+      <marker id="ar3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#2fa96b"/>
+      </marker>
+      <marker id="ar3b" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#e2647f"/>
+      </marker>
+    </defs>
+
+    <!-- Layer A -->
+    <rect x="14" y="14" width="1052" height="118" rx="12" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.6"/>
+    <text x="32" y="38" font-size="12.5" font-weight="700" fill="#4a2fae" font-family="ui-monospace,monospace">第 1 层 · ModelsImpl.stream_simple → lazy_stream(model, setup_A)</text>
+    <rect x="120" y="50" width="330" height="66" rx="9" fill="#fff" stroke="#8b6ff0"/>
+    <text x="285" y="72" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">outer_A = AssistantMessageEventStream()</text>
+    <text x="285" y="90" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">setup_A: 认证解析 + 委托 provider</text>
+    <text x="285" y="106" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">失败 → push(error_event) + end()</text>
+    <rect x="470" y="50" width="300" height="66" rx="9" fill="#fff" stroke="#8b6ff0"/>
+    <text x="620" y="72" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">run() → forward_stream(outer_A, inner)</text>
+    <text x="620" y="90" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">async for e in inner: outer_A.push(e)</text>
+    <text x="620" y="106" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">末尾 target.end(await inner.result())</text>
+    <text x="900" y="80" font-size="11" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">返回给 example1.py</text>
+    <text x="900" y="98" font-size="10.5" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">→ 立刻 .result()</text>
+
+    <!-- Layer B -->
+    <rect x="14" y="144" width="1052" height="118" rx="12" fill="#fdeed2" stroke="#e0a637" stroke-width="1.6"/>
+    <text x="32" y="168" font-size="12.5" font-weight="700" fill="#8a5c05" font-family="ui-monospace,monospace">第 2 层 · LazyApi.stream_simple → lazy_stream(model, setup_B)</text>
+    <rect x="120" y="180" width="330" height="66" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="285" y="202" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">outer_B = AssistantMessageEventStream()</text>
+    <text x="285" y="220" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">setup_B: importlib.import_module(…)</text>
+    <text x="285" y="236" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">→ module.stream_simple(model, ctx, opt)</text>
+    <rect x="470" y="180" width="300" height="66" rx="9" fill="#fff" stroke="#e0a637"/>
+    <text x="620" y="202" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">动态导入的代价只付一次</text>
+    <text x="620" y="220" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">import 缓存保证不重复加载</text>
+    <text x="620" y="236" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">加载失败同样编码为 error 事件</text>
+
+    <!-- Layer C -->
+    <rect x="14" y="274" width="1052" height="118" rx="12" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.6"/>
+    <text x="32" y="298" font-size="12.5" font-weight="700" fill="#0f6b3e" font-family="ui-monospace,monospace">第 3 层 · openai_responses.stream() → 自建 output_stream</text>
+    <rect x="120" y="310" width="330" height="66" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="285" y="332" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">output_stream = AssistantMessageEventStream()</text>
+    <text x="285" y="350" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">run(): httpx POST → SSE → 折叠</text>
+    <text x="285" y="366" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">真正的网络与解析都在这里</text>
+    <rect x="470" y="310" width="300" height="66" rx="9" fill="#fff" stroke="#2fa96b"/>
+    <text x="620" y="332" font-size="11.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">process_responses_stream(...)</text>
+    <text x="620" y="350" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">SSE dict → AssistantMessage</text>
+    <text x="620" y="366" font-size="11" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">push(done_event) + end()</text>
+
+    <!-- 事件上浮箭头 -->
+    <line x1="340" y1="274" x2="340" y2="262" stroke="#2fa96b" stroke-width="1.6" marker-end="url(#ar3)"/>
+    <text x="350" y="292" font-size="10.5" fill="#0f6b3e" font-family="ui-monospace,monospace">事件逐层上浮（push）</text>
+    <line x1="340" y1="144" x2="340" y2="132" stroke="#2fa96b" stroke-width="1.6" marker-end="url(#ar3)"/>
+    <text x="350" y="162" font-size="10.5" fill="#0f6b3e" font-family="ui-monospace,monospace">事件逐层上浮（push）</text>
+
+    <!-- 结算回传 -->
+    <line x1="760" y1="132" x2="760" y2="144" stroke="#e2647f" stroke-width="1.6" marker-end="url(#ar3b)"/>
+    <line x1="760" y1="262" x2="760" y2="274" stroke="#e2647f" stroke-width="1.6" marker-end="url(#ar3b)"/>
+    <text x="772" y="200" font-size="10.5" fill="#a3243f" font-family="ui-monospace,monospace">forward_stream</text>
+    <text x="772" y="216" font-size="10.5" fill="#a3243f" font-family="ui-monospace,monospace">逐个 push 转发</text>
+
+    <!-- 底部结论 -->
+    <rect x="14" y="406" width="1052" height="50" rx="11" fill="#fff" stroke="#5b8def" stroke-width="1.5"/>
+    <text x="34" y="430" font-size="11.8" fill="#1a2233" font-family="ui-monospace,monospace" font-weight="700">净效果：</text>
+    <text x="120" y="430" font-size="11.8" fill="#41506b" font-family="ui-monospace,monospace">调用方在任何一层都「拿到即返回」；网络 I/O、模块 import、认证解析全部推迟到后台；错误一律走 error 事件而不是异常。</text>
+    <text x="34" y="450" font-size="11.8" fill="#1a2233" font-family="ui-monospace,monospace" font-weight="700">代价：</text>
+    <text x="120" y="450" font-size="11.8" fill="#41506b" font-family="ui-monospace,monospace">三层 event stream + 两层 forward 转发，profile 时栈会偏深；调试须顺着 push → forward_stream → _settle 追。</text>
+  </svg>
+  <figcaption>图 3 · 三层惰性嵌套。每层都是「新建流 + ensure_future(run())」，上层的 <code>forward_stream</code> 逐条搬运下层事件。</figcaption>
+  </div>
+
+  <div class="callout key">
+    <b>唯一真正的「同步阻塞点」</b>是最后的 <code>await ….result()</code>。此前所有操作——包括 <code>create_models</code>、<code>all_providers</code>、<code>get_model</code>、<code>normalize_context</code>、以及三层流的构造——都在当前 tick 内完成，一个字节的网络数据都还没发出去。
+  </div>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section id="s5">
+  <h2><span class="idx">5</span>类定义与关系图</h2>
+  <p class="sub">◆ 组合（持有实例）· ◇ 聚合（持有多实例）· ─▷ 继承（dataclass 派生）· ⇢ 依赖（运行时引用 / 动态导入）。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1080 700" role="img" aria-label="类关系图">
+    <defs>
+      <marker id="ar4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+        <path d="M0,0 L8,3 L0,6 z" fill="#6b7a90"/>
+      </marker>
+      <marker id="ar4h" markerWidth="11" markerHeight="11" refX="9" refY="3.2" orient="auto">
+        <path d="M0,0 L9,3.2 L0,6.4 z" fill="#8b6ff0"/>
+      </marker>
+    </defs>
+
+    <!-- ModelsImpl -->
+    <rect x="24" y="24" width="300" height="196" rx="11" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.7"/>
+    <text x="44" y="48" font-size="13" font-weight="700" fill="#4a2fae" font-family="ui-monospace,monospace">ModelsImpl</text>
+    <text x="44" y="66" font-size="10.5" fill="#5b5570" font-family="ui-monospace,monospace">（Protocol: Models）</text>
+    <line x1="24" y1="76" x2="324" y2="76" stroke="#8b6ff0" stroke-width="1"/>
+    <text x="44" y="94" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_providers: dict[str, ProviderImpl]</text>
+    <text x="44" y="110" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_credentials: CredentialStore</text>
+    <text x="44" y="126" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_models_store: ModelsStore</text>
+    <text x="44" y="142" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_auth_context: AuthContext</text>
+    <text x="44" y="158" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_refresh_generations / _controllers</text>
+    <text x="44" y="174" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_publication_chains</text>
+    <line x1="24" y1="184" x2="324" y2="184" stroke="#8b6ff0" stroke-width="1"/>
+    <text x="44" y="202" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">set_provider / get_model / stream_simple /</text>
+    <text x="44" y="216" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">complete_simple / _apply_auth / refresh</text>
+
+    <!-- create_models -->
+    <rect x="372" y="34" width="180" height="44" rx="10" fill="#fff" stroke="#8b6ff0" stroke-dasharray="5 3"/>
+    <text x="462" y="52" font-size="11" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">create_models()</text>
+    <text x="462" y="68" font-size="10" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">工厂 → ModelsImpl</text>
+    <line x1="370" y1="88" x2="326" y2="88" stroke="#8b6ff0" stroke-width="1.5" marker-end="url(#ar4h)"/>
+
+    <!-- CreateModelsOptions -->
+    <rect x="372" y="98" width="180" height="60" rx="10" fill="#fff" stroke="#8b6ff0"/>
+    <text x="462" y="118" font-size="10.8" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">CreateModelsOptions</text>
+    <text x="462" y="134" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">credentials / models_store</text>
+    <text x="462" y="149" font-size="10" text-anchor="middle" fill="#4a5568" font-family="ui-monospace,monospace">auth_context（注入点）</text>
+    <line x1="370" y1="128" x2="326" y2="118" stroke="#8b6ff0" stroke-width="1.5" marker-end="url(#ar4h)"/>
+
+    <!-- ProviderImpl -->
+    <rect x="620" y="24" width="300" height="176" rx="11" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.7"/>
+    <text x="640" y="48" font-size="13" font-weight="700" fill="#4a2fae" font-family="ui-monospace,monospace">ProviderImpl</text>
+    <text x="640" y="66" font-size="10.5" fill="#5b5570" font-family="ui-monospace,monospace">（Protocol: Provider）</text>
+    <line x1="620" y1="76" x2="920" y2="76" stroke="#8b6ff0" stroke-width="1"/>
+    <text x="640" y="94" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">id / name / base_url / headers</text>
+    <text x="640" y="110" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">auth: ProviderAuth</text>
+    <text x="640" y="126" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_baseline_models: list[AnyModel]</text>
+    <text x="640" y="142" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_dynamic_models: list[AnyModel]</text>
+    <text x="640" y="158" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_single / _by_api: LazyApi</text>
+    <line x1="620" y1="168" x2="920" y2="168" stroke="#8b6ff0" stroke-width="1"/>
+    <text x="640" y="186" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">get_models / _dispatch / stream_simple</text>
+
+    <line x1="600" y1="70" x2="328" y2="70" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar4)"/>
+    <text x="352" y="62" font-size="10" fill="#5b5570" font-family="ui-monospace,monospace">0..9  ⁄  _providers</text>
+
+    <!-- create_provider -->
+    <rect x="620" y="216" width="300" height="52" rx="10" fill="#fff" stroke="#8b6ff0" stroke-dasharray="5 3"/>
+    <text x="770" y="236" font-size="11" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">create_provider(CreateProviderOptions)</text>
+    <text x="770" y="252" font-size="10" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">工厂 → ProviderImpl（校验 api 非空）</text>
+    <line x1="770" y1="214" x2="770" y2="202" stroke="#8b6ff0" stroke-width="1.5" marker-end="url(#ar4h)"/>
+
+    <!-- LazyApi -->
+    <rect x="620" y="296" width="300" height="130" rx="11" fill="#fdeed2" stroke="#e0a637" stroke-width="1.7"/>
+    <text x="640" y="320" font-size="13" font-weight="700" fill="#8a5c05" font-family="ui-monospace,monospace">LazyApi</text>
+    <line x1="620" y1="330" x2="920" y2="330" stroke="#e0a637" stroke-width="1"/>
+    <text x="640" y="348" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_load: Callable[[], Awaitable[Any]]</text>
+    <text x="640" y="364" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_supports_fetch_deferred: bool</text>
+    <text x="640" y="380" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_supports_cancel_deferred: bool</text>
+    <text x="640" y="398" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">stream / stream_simple / _implementation()</text>
+    <text x="640" y="416" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">fetch_deferred / cancel_deferred（property）</text>
+    <line x1="770" y1="294" x2="770" y2="236" stroke="#6b7a90" stroke-width="1.6"/>
+    <line x1="770" y1="268" x2="880" y2="268" stroke="none"/>
+    <text x="792" y="286" font-size="10" fill="#5b5570" font-family="ui-monospace,monospace">1 ⁄ _single</text>
+
+    <!-- 动态导入模块 -->
+    <rect x="620" y="458" width="300" height="72" rx="11" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7" stroke-dasharray="6 4"/>
+    <text x="640" y="482" font-size="12" font-weight="700" fill="#0f6b3e" font-family="ui-monospace,monospace">pi_ai.api.openai_responses</text>
+    <text x="640" y="500" font-size="10.5" fill="#2b3348" font-family="ui-monospace,monospace">stream_simple / stream / _build_params</text>
+    <text x="640" y="518" font-size="10.5" fill="#2b3348" font-family="ui-monospace,monospace">（模块级函数，非类）</text>
+    <line x1="770" y1="456" x2="770" y2="428" stroke="#2fa96b" stroke-width="1.7" marker-end="url(#ar4)"/>
+    <text x="782" y="446" font-size="10" fill="#0f6b3e" font-family="ui-monospace,monospace">⇢ importlib 动态导入</text>
+
+    <!-- 认证侧 -->
+    <rect x="24" y="252" width="300" height="150" rx="11" fill="#d5f2f2" stroke="#2aa5a5" stroke-width="1.7"/>
+    <text x="44" y="276" font-size="12.5" font-weight="700" fill="#0d6b6b" font-family="ui-monospace,monospace">认证协作方</text>
+    <line x1="24" y1="286" x2="324" y2="286" stroke="#2aa5a5" stroke-width="1"/>
+    <text x="44" y="304" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">ProviderAuth ◆ api_key: EnvApiKeyAuth</text>
+    <text x="44" y="322" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">AuthResolutionOverrides（api_key/env/signal）</text>
+    <text x="44" y="340" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">AuthResult → ModelAuth(api_key/headers/base_url)</text>
+    <text x="44" y="358" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">ApiKeyCredential(type, key, env)</text>
+    <text x="44" y="376" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">InMemoryCredentialStore ◆ read/modify</text>
+    <text x="44" y="394" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">DefaultProviderAuthContext ◆ env()/file_exists()</text>
+    <line x1="170" y1="250" x2="170" y2="222" stroke="#6b7a90" stroke-width="1.6" marker-end="url(#ar4)"/>
+
+    <!-- 事件流 -->
+    <rect x="24" y="432" width="300" height="128" rx="11" fill="#dce9ff" stroke="#5b8def" stroke-width="1.7"/>
+    <text x="44" y="456" font-size="12.5" font-weight="700" fill="#17458f" font-family="ui-monospace,monospace">EventStream[T, R]</text>
+    <text x="44" y="472" font-size="10" fill="#5b5570" font-family="ui-monospace,monospace">Generic · 继承关系见下</text>
+    <line x1="24" y1="482" x2="324" y2="482" stroke="#5b8def" stroke-width="1"/>
+    <text x="44" y="500" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">_queue: deque[T]  _waiters / _result_waiters</text>
+    <text x="44" y="518" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">push(e) → _deliver / _settle（终止事件）</text>
+    <text x="44" y="536" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">__aiter__ → _iterate / result() → future</text>
+    <text x="44" y="554" font-size="10.8" fill="#2b3348" font-family="ui-monospace,monospace">end(result) 直接终止</text>
+    <rect x="200" y="576" width="176" height="42" rx="10" fill="#fff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="288" y="594" font-size="10.8" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">AssistantMessageEventStream</text>
+    <text x="288" y="610" font-size="9.8" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">is_complete=done/error</text>
+    <line x1="288" y1="564" x2="288" y2="574" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar4)"/>
+
+    <!-- 类型层 -->
+    <rect x="372" y="432" width="548" height="128" rx="11" fill="#fde2e7" stroke="#e2647f" stroke-width="1.7"/>
+    <text x="392" y="456" font-size="12.5" font-weight="700" fill="#a3243f" font-family="ui-monospace,monospace">选项与消息类型（types.py）</text>
+    <line x1="372" y1="466" x2="920" y2="466" stroke="#e2647f" stroke-width="1"/>
+    <rect x="392" y="478" width="200" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="492" y="498" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">ProviderRequestOptions</text>
+    <rect x="612" y="478" width="140" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="682" y="498" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">StreamOptions</text>
+    <rect x="772" y="478" width="140" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="842" y="498" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">SimpleStreamOptions</text>
+    <line x1="594" y1="493" x2="610" y2="493" stroke="#e2647f" stroke-width="1.6" marker-end="url(#ar4)"/>
+    <line x1="754" y1="493" x2="770" y2="493" stroke="#e2647f" stroke-width="1.6" marker-end="url(#ar4)"/>
+    <text x="602" y="488" font-size="8.5" text-anchor="middle" fill="#a3243f" font-family="ui-monospace,monospace">▷</text>
+    <text x="762" y="488" font-size="8.5" text-anchor="middle" fill="#a3243f" font-family="ui-monospace,monospace">▷</text>
+    <rect x="392" y="518" width="150" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="467" y="538" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">Context</text>
+    <rect x="562" y="518" width="170" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="647" y="538" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">TranscriptContext</text>
+    <line x1="544" y1="533" x2="560" y2="533" stroke="#e2647f" stroke-width="1.6" marker-end="url(#ar4)"/>
+    <text x="552" y="528" font-size="8.5" text-anchor="middle" fill="#a3243f" font-family="ui-monospace,monospace">normalize_context</text>
+    <rect x="752" y="518" width="160" height="30" rx="8" fill="#fff" stroke="#e2647f"/>
+    <text x="832" y="538" font-size="10.5" text-anchor="middle" fill="#1a2233" font-family="ui-monospace,monospace">Model ← data/*.json</text>
+    <rect x="392" y="554" width="520" height="0" fill="none"/>
+    <text x="392" y="562" font-size="10.5" fill="#5b5570" font-family="ui-monospace,monospace">消息：SystemMessage / UserMessage / AssistantMessage / ToolResultMessage</text>
+    <text x="392" y="578" font-size="10.5" fill="#5b5570" font-family="ui-monospace,monospace">内容块：TextContent / ThinkingContent / ToolCall　用量：Usage → Cost</text>
+  </svg>
+  <figcaption>图 4 · 类关系。注意 <code>ModelsImpl</code> 与 <code>ProviderImpl</code> 才是「类」；API 适配器是<b>模块级函数</b>，通过 <code>LazyApi</code> 被间接持有。</figcaption>
+  </div>
+
+  <h3>继承链（dataclass 派生）</h3>
+<pre><code>ProviderRequestOptions        <span class="cm"># signal / api_key / fetch / env / headers / timeout_ms / max_retries …</span>
+  └─▷ StreamOptions           <span class="cm"># + on_provider_stream_event / temperature / max_tokens / cache_retention / session_id …</span>
+        └─▷ SimpleStreamOptions  <span class="cm"># + tool_choice / reasoning / deferred / thinking_budgets</span>
+
+<span class="cm"># ProviderRequestOptions.__getattr__ 把「同继承体系内其他 option 类型的字段名」读作 None，</span>
+<span class="cm"># 但对未知名 / 下划线名仍抛 AttributeError —— 于是 hasattr 仍可作为「字段泄露探测器」。</span>
+
+EventStream[T, R]
+  └─▷ AssistantMessageEventStream  <span class="cm"># is_complete = type in ("done","error")；extract_result = message / error</span>
+
+<span class="cm"># Context（输入）──normalize_context──▶ TranscriptContext（provider 侧唯一认可的形态）</span>
+</code></pre>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section id="s6">
+  <h2><span class="idx">6</span>模块依赖图</h2>
+  <p class="sub">箭头方向为「依赖 / import 方向」。绿底为本次运行实际被加载的模块；灰底为被 <code>all_providers()</code> 顺带构造但仍未加载实现的模块。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1080 620" role="img" aria-label="模块依赖图">
+    <defs>
+      <marker id="ar5" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+        <path d="M0,0 L7.5,3 L0,6 z" fill="#6b7a90"/>
+      </marker>
+      <marker id="ar5g" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+        <path d="M0,0 L7.5,3 L0,6 z" fill="#2fa96b"/>
+      </marker>
+    </defs>
+
+    <!-- 应用 -->
+    <rect x="380" y="14" width="300" height="46" rx="10" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="530" y="34" font-size="12" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">examples/example1.py</text>
+    <text x="530" y="50" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">main() · asyncio.run()</text>
+
+    <!-- pi_ai 包入口 -->
+    <rect x="380" y="90" width="300" height="46" rx="10" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="530" y="110" font-size="12" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">pi_ai/__init__.py</text>
+    <text x="530" y="126" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">create_models / SimpleStreamOptions 再导出</text>
+    <line x1="530" y1="62" x2="530" y2="88" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- 注册表 -->
+    <rect x="340" y="166" width="380" height="60" rx="10" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.7"/>
+    <text x="530" y="188" font-size="12" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">pi_ai/models.py</text>
+    <text x="530" y="205" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">ModelsImpl · ProviderImpl · create_models · create_provider</text>
+    <text x="530" y="219" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">clamp_thinking_level · calculate_cost</text>
+    <line x1="530" y1="138" x2="530" y2="164" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- 左：providers -->
+    <rect x="24" y="166" width="270" height="60" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="159" y="188" font-size="12" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">pi_ai/providers/all.py</text>
+    <text x="159" y="205" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">all_providers · _PROVIDER_FACTORIES</text>
+    <text x="159" y="219" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">builtin_providers · builtin_models</text>
+    <line x1="338" y1="190" x2="300" y2="190" stroke="#6b7a90" stroke-width="1.5"/>
+    <text x="319" y="184" font-size="9" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">↑</text>
+    <line x1="376" y1="60" x2="290" y2="60" stroke="#6b7a90" stroke-width="1.5"/>
+    <line x1="290" y1="60" x2="290" y2="164" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <text x="300" y="100" font-size="9.5" fill="#5b5570" font-family="ui-monospace,monospace">全量导入</text>
+
+    <!-- 中：providers/deepseek -->
+    <rect x="24" y="252" width="270" height="60" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="159" y="274" font-size="12" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">providers/deepseek.py</text>
+    <text x="159" y="291" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">deepseek_provider()</text>
+    <text x="159" y="305" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">auth / base_url / models / api</text>
+    <line x1="159" y1="250" x2="159" y2="228" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- 左：catalog -->
+    <rect x="24" y="338" width="270" height="74" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="159" y="360" font-size="12" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">providers/catalog.py</text>
+    <text x="159" y="377" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">chat_model_catalog（@lru_cache）</text>
+    <text x="159" y="391" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">load_provider_data</text>
+    <text x="159" y="405" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">PROVIDER_CATALOG_DATA_DIR</text>
+    <line x1="159" y1="336" x2="159" y2="314" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- 最左：json -->
+    <rect x="24" y="438" width="270" height="52" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="159" y="458" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">providers/data/deepseek.json</text>
+    <text x="159" y="475" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">openai-responses → chat:deepseek-flash</text>
+    <line x1="159" y1="436" x2="159" y2="414" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- model_catalog.py -->
+    <rect x="24" y="516" width="270" height="52" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="159" y="536" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">model_catalog.py</text>
+    <text x="159" y="553" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">flatten_chat_model_catalog → from_json</text>
+    <line x1="159" y1="490" x2="159" y2="514" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <line x1="240" y1="406" x2="240" y2="514" stroke="#6b7a90" stroke-width="1.2" stroke-dasharray="4 4"/>
+
+    <!-- 右：API 适配器 -->
+    <rect x="786" y="166" width="270" height="74" rx="10" fill="#fdeed2" stroke="#e0a637" stroke-width="1.7"/>
+    <text x="921" y="188" font-size="12" text-anchor="middle" fill="#8a5c05" font-family="ui-monospace,monospace" font-weight="700">pi_ai/api/lazy.py</text>
+    <text x="921" y="205" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">LazyApi · lazy_stream · lazy_load</text>
+    <text x="921" y="219" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">forward_stream · create_setup_error_message</text>
+    <text x="921" y="233" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">（models.py 与 adapters 双向依赖）</text>
+    <line x1="722" y1="190" x2="784" y2="190" stroke="#6b7a90" stroke-width="1.5"/>
+    <text x="752" y="184" font-size="9" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">↔</text>
+
+    <rect x="786" y="256" width="270" height="60" rx="10" fill="#fdeed2" stroke="#e0a637" stroke-width="1.7"/>
+    <text x="921" y="278" font-size="11.5" text-anchor="middle" fill="#8a5c05" font-family="ui-monospace,monospace" font-weight="700">api/simple_options.py</text>
+    <text x="921" y="295" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">build_base_options · clamp_max_tokens_to_context</text>
+    <text x="921" y="309" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">clamp_thinking_budget_to_answer_room</text>
+    <line x1="921" y1="254" x2="921" y2="242" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <rect x="786" y="332" width="270" height="86" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="921" y="354" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">api/openai_responses.py</text>
+    <text x="921" y="371" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">stream_simple · stream · run()</text>
+    <text x="921" y="385" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">_create_client · _build_params · _get_compat</text>
+    <text x="921" y="399" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">（首次请求时才被 import）</text>
+    <line x1="921" y1="330" x2="921" y2="318" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+    <line x1="784" y1="196" x2="770" y2="196" stroke="none"/>
+
+    <rect x="786" y="434" width="270" height="74" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.7"/>
+    <text x="921" y="456" font-size="11" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">api/openai_responses_shared.py</text>
+    <text x="921" y="473" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">convert_responses_messages / _tools</text>
+    <text x="921" y="487" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">send_streaming_request / iter_stream_payloads</text>
+    <text x="921" y="501" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">process_responses_stream</text>
+    <line x1="921" y1="432" x2="921" y2="420" stroke="#6b7a90" stroke-width="1.5" marker-end="url(#ar5)"/>
+
+    <!-- 底部基础层 -->
+    <rect x="340" y="524" width="446" height="80" rx="11" fill="#d5f2f2" stroke="#2aa5a5" stroke-width="1.7"/>
+    <text x="563" y="546" font-size="12" text-anchor="middle" fill="#0d6b6b" font-family="ui-monospace,monospace" font-weight="700">utils/* · auth/* · types.py（被所有层共享）</text>
+    <text x="563" y="565" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">utils/event_stream.py · utils/transcript.py · utils/estimate.py</text>
+    <text x="563" y="579" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">utils/http.py · utils/sse.py · utils/retry.py · utils/abort.py</text>
+    <text x="563" y="593" font-size="10" text-anchor="middle" fill="#41506b" font-family="ui-monospace,monospace">auth/resolve.py · auth/helpers.py · types.py</text>
+
+    <line x1="159" y1="516" x2="159" y2="568" stroke="none"/>
+    <line x1="338" y1="190" x2="338" y2="568" stroke="#2aa5a5" stroke-width="1.3" stroke-dasharray="5 4"/>
+    <line x1="338" y1="568" x2="352" y2="568" stroke="#2aa5a5" stroke-width="1.3" marker-end="url(#ar5)"/>
+    <line x1="921" y1="508" x2="921" y2="568" stroke="#2aa5a5" stroke-width="1.3" marker-end="url(#ar5)"/>
+    <line x1="784" y1="190" x2="800" y2="190" stroke="none"/>
+  </svg>
+  <figcaption>图 5 · 模块依赖。<code>models.py</code> ⇄ <code>api/lazy.py</code> 是唯一的双向依赖（<code>models</code> 用 <code>lazy_stream</code>，<code>lazy</code> 用 <code>types</code>；适配器通过 <code>lazy_load</code> 反向被 <code>models</code> 触发加载）。</figcaption>
+  </div>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section id="s7">
+  <h2><span class="idx">7</span>关键调用链清单</h2>
+  <p class="sub">逐行对照：从 <code>main()</code> 的每一句到最底层函数，中间经过的每一个跳转。</p>
+
+  <h3>链 1 · <code>create_models()</code></h3>
+<pre><code>example1.main
+ └─ pi_ai.create_models(options=None)                 <span class="cm"># models.py:1225</span>
+     └─ ModelsImpl.__init__(None)                     <span class="cm"># models.py:311</span>
+         ├─ InMemoryCredentialStore()                 <span class="cm"># _credentials</span>
+         ├─ InMemoryModelsStore()                     <span class="cm"># _models_store</span>
+         └─ default_provider_auth_context()           <span class="cm"># _auth_context</span>
+</code></pre>
+
+  <h3>链 2 · <code>all_providers()</code> → 9 家工厂</h3>
+<pre><code>example1.main
+ └─ providers.all.all_providers()                     <span class="cm"># all.py:129</span>
+     └─ builtin_providers()                           <span class="cm"># all.py:120</span>
+         └─ [_PROVIDER_FACTORIES[id]() for id in KNOWN_PROVIDERS]
+             ├─ anthropic_provider()  ─┐
+             ├─ google_provider()      │  每家都是：
+             ├─ openai_provider()      │   create_provider(CreateProviderOptions(
+             ├─ deepseek_provider() ───┤       id, name, base_url,
+             │    └─ create_provider() │       auth=ProviderAuth(api_key=env_api_key_auth(...)),
+             │         └─ ProviderImpl.__init__()   models=list(chat_model_catalog(id).values()),
+             │              ├─ lazy_api(lazy_load("pi_ai.api.openai_responses"))
+             │              └─ chat_model_catalog("deepseek")  <span class="cm"># @lru_cache</span>
+             │                   └─ load_provider_data("deepseek")   # 读 data/deepseek.json
+             │                        └─ flatten_chat_model_catalog("deepseek", groups)
+             │                             └─ flatten_model_catalog(groups)
+             │                                  └─ from_json(Model, model_json)   # 每条 chat 模型
+             ├─ minimax_provider()      │
+             ├─ minimax_cn_provider()   │
+             ├─ moonshotai_provider()   │
+             ├─ moonshotai_cn_provider()│
+             └─ xiaomi_provider()      ─┘
+</code></pre>
+
+  <h3>链 3 · <code>set_provider()</code> ×9</h3>
+<pre><code>ModelsImpl.set_provider(provider)                     <span class="cm"># models.py:328</span>
+ ├─ _supersede_provider_refresh(provider.id)          <span class="cm"># models.py:465</span>
+ │   ├─ _refresh_generations[id] = 旧代次 + 1          <span class="cm"># ← 作废旧发布</span>
+ │   └─ _refresh_controllers.pop(id).abort()          <span class="cm"># ← 中止在跑的刷新</span>
+ └─ _providers[provider.id] = provider                <span class="cm"># ← upsert</span>
+</code></pre>
+
+  <h3>链 4 · <code>get_model()</code></h3>
+<pre><code>ModelsImpl.get_model("deepseek", "deepseek-flash")    <span class="cm"># models.py:438</span>
+ ├─ get_models("deepseek")                            <span class="cm"># models.py:373</span>
+ │   └─ ProviderImpl.get_models()                     <span class="cm"># models.py:1343</span>
+ │       ├─ _current_models()                         <span class="cm"># models.py:1319</span>
+ │       │   ├─ merged = list(self._baseline_models)   <span class="cm"># ← 来自 deepseek.json</span>
+ │       │   └─ for m in self._dynamic_models: …       <span class="cm"># ← 本示例为空</span>
+ │       └─ [m for m in … if is_model_type(m, "chat")] <span class="cm"># 过滤非 chat</span>
+ └─ next(m for m in … if m.id == "deepseek-flash")     <span class="cm"># ← 命中</span>
+</code></pre>
+
+  <h3>链 5 · <code>complete_simple()</code>（主干）</h3>
+<pre><code>ModelsImpl.complete_simple(model, context, options)    <span class="cm"># models.py:1121</span>
+ └─ await ModelsImpl.stream_simple(...).result()        <span class="cm"># 先拿流，再等结果</span>
+     │
+     ├─ transcript = normalize_context(context)         <span class="cm"># transcript.py:75（唯一入口，幂等）</span>
+     │   └─ create_initial_system_message(prompt, tools) <span class="cm"># 两者皆空 → None</span>
+     │
+     └─ return lazy_stream(model, setup)                <span class="cm"># lazy.py:68 ← 第 1 层惰性</span>
+         ├─ outer = AssistantMessageEventStream()       <span class="cm"># event_stream.py:196</span>
+         └─ asyncio.ensure_future(run())                <span class="cm"># 后台任务开始</span>
+             │
+             ├─▶【后台】inner = await setup()
+             │    ├─ provider = self._require_chat_provider(model)   <span class="cm"># models.py:973</span>
+             │    │   ├─ assert_chat_model(model)                     <span class="cm"># model_operations.py</span>
+             │    │   └─ self._require_provider(model) → _providers["deepseek"]
+             │    │
+             │    └─ request_model, request_options = await self._apply_auth(
+             │            model, options, None, SimpleStreamOptions())   <span class="cm"># models.py:985</span>
+             │        ├─ self.get_auth(model, AuthResolutionOverrides(api_key="sk-…"))
+             │        │   └─ resolve_provider_auth(provider, credentials, auth_ctx, overrides)
+             │        │       ├─ signal = operation_signal(None)                <span class="cm"># abort.py:251</span>
+             │        │       └─ race_with_abort_signal(_resolve_with_signal(...), signal)
+             │        │           └─ overrides.api_key 命中（优先级最高）★
+             │        │               └─ _resolve_api_key(…, ApiKeyCredential(key="sk-…"), signal)
+             │        │                   └─ EnvApiKeyAuth.resolve(ctx, credential, signal)  <span class="cm"># helpers.py:59</span>
+             │        │                       └─ credential.key 非空 → AuthResult(
+             │        │                              auth=ModelAuth(api_key="sk-…"),
+             │        │                              env=None, source="stored credential")
+             │        ├─ api_key   = options.api_key（显式优先于 auth.api_key）
+             │        ├─ headers   = merge_headers(auth.headers, options.headers)
+             │        ├─ env       = None（两处都无）
+             │        ├─ request_model = replace(model, base_url=auth.base_url) if auth.base_url else model
+             │        │                  <span class="cm"># ← 本例 auth.base_url 为 None，沿用 model.base_url</span>
+             │        └─ request_options = replace(options, api_key=…, headers=…, env=None)
+             │
+             └─▶ provider.stream_simple(request_model, transcript, request_options)
+                 └─ ProviderImpl.stream_simple(...)                       <span class="cm"># models.py:1447</span>
+                     └─ _dispatch(model, run)                             <span class="cm"># models.py:1414</span>
+                         ├─ streams = self._api_for(model) → self._single（LazyApi）
+                         └─ run(streams) = LazyApi.stream_simple(...)     <span class="cm"># lazy.py:167 ← 第 2 层惰性</span>
+                             ├─ lazy_stream(model, setup2) → inner_B
+                             └─【后台】setup2()
+                                 └─ (await self._implementation()).stream_simple(...)
+                                     ├─ importlib.import_module("pi_ai.api.openai_responses")  ★首次真正 import
+                                     └─ openai_responses.stream_simple(model, ctx, opt)        <span class="cm"># L702</span>
+                                         ├─ _get_client_api_key(model.provider, opt.api_key, opt.headers)
+                                         ├─ base = build_base_options(model, ctx, opt, opt.api_key)  <span class="cm"># simple_options.py:68</span>
+                                         │   └─ clamp_max_tokens_to_context(model, ctx, max_tokens)  <span class="cm"># L51</span>
+                                         │       └─ estimate_context_tokens(ctx).tokens   <span class="cm"># estimate.py</span>
+                                         │           <span class="cm"># min(max_tokens, max(1, context_window - est - 4096))</span>
+                                         ├─ clamped_reasoning = clamp_thinking_level(model, opt.reasoning) if opt.reasoning
+                                         │   <span class="cm"># ← 本例 reasoning 为 None，故跳过</span>
+                                         ├─ provider_options = _extend_options(base, OpenAIResponsesOptions, …)
+                                         └─ openai_responses.stream(model, ctx, provider_options)   <span class="cm"># L546 ← 第 3 层惰性</span>
+                                             ├─ output_stream = AssistantMessageEventStream()
+                                             ├─ normalized_context = resolve_transcript(ctx, compat.…)
+                                             └─【后台】run():
+                                                 ├─ output = AssistantMessage(api, provider, model, usage=Usage(),
+                                                 │             stop_reason="pending", timestamp=now_ms())
+                                                 ├─ compat = _get_compat(model)                    <span class="cm"># L282</span>
+                                                 ├─ grammar_tool_input_properties = create_grammar_tool_input_properties(
+                                                 │        get_declared_tools(normalized_context.messages), …)
+                                                 ├─ client = _create_client(model, api_key, headers, fetch,
+                                                 │        cache_session_id, compat, timeout_ms)      <span class="cm"># L354</span>
+                                                 │   └─ build_headers({"Authorization": f"Bearer {api_key}"}, …)
+                                                 │       └─ create_client(headers=…, timeout_ms=…, fetch=…)   <span class="cm"># utils/http.py</span>
+                                                 ├─ params = _build_params(model, normalized_context, options,
+                                                 │        compat, grammar_tool_input_properties)    <span class="cm"># L400</span>
+                                                 │   ├─ resolve_transcript_tools(messages, …)
+                                                 │   ├─ convert_responses_messages(model, ctx, …)   <span class="cm"># shared.py:567</span>
+                                                 │   ├─ _resolve_cache_retention(…) → "short"
+                                                 │   ├─ params = {"model", "input", "stream": True, "store": False}
+                                                 │   ├─ + prompt_cache_key / max_output_tokens / temperature
+                                                 │   └─ + reasoning（若 model.reasoning 且指定了 effort）
+                                                 ├─ if options.on_payload: params = await maybe_await(on_payload(params, model))
+                                                 ├─ url = join_url(model.base_url, "/responses")   <span class="cm"># shared.py:305</span>
+                                                 │   <span class="cm"># → https://api.deepseek.com/responses</span>
+                                                 ├─ response = await retry_provider_request(          <span class="cm"># utils/retry.py</span>
+                                                 │        lambda: send_streaming_request(client, url, params, signal),
+                                                 │        ProviderRetryOptions(max_retries, max_retry_delay_ms, signal))
+                                                 │    └─ send_streaming_request(…)                  <span class="cm"># shared.py:326</span>
+                                                 │        ├─ request = client.build_request("POST", url, json=to_json(params))
+                                                 │        ├─ response = await _await_with_abort(client.send(request, stream=True), signal)
+                                                 │        └─ if status >= 400: read_error_body → ProviderHTTPError  ★重试分界点
+                                                 ├─ if options.on_response: await maybe_await(on_response(ProviderResponse(…), model))
+                                                 ├─ output_stream.push(start_event(output))
+                                                 ├─ await process_responses_stream(                <span class="cm"># shared.py:996</span>
+                                                 │        iter_stream_payloads(response, signal),    <span class="cm"># shared.py:359</span>
+                                                 │            └─ iter_sse_events(iter_response_lines(response))
+                                                 │               → iter_with_abort(events, signal)
+                                                 │               → json.loads(data)（"[DONE]" 结束）
+                                                 │        output, output_stream, model,
+                                                 │        OpenAIResponsesStreamOptions(…))
+                                                 │    └─ 按 item.type 建槽位并推事件：
+                                                 │        reasoning → thinking_start/delta/end
+                                                 │        message   → text_start/delta/end（并累积 output.content）
+                                                 │        function_call / custom_tool_call → tool_call_* 事件
+                                                 │        → 收敛 usage / stop_reason
+                                                 ├─ if signal.aborted: raise RuntimeError("Request was aborted")
+                                                 ├─ if output.stop_reason in ("aborted","error"): raise
+                                                 ├─ output_stream.push(done_event(output.stop_reason, output))  ★
+                                                 └─ output_stream.end()
+                                                     <span class="cm"># except 分支：清理 index/partial_json/custom_input 临时字段，</span>
+                                                     <span class="cm">#              设 stop_reason="error"，push(error_event)，end()</span>
+                                                     <span class="cm"># finally 分支：await response.aclose() / client.aclose()</span>
+
+<span class="cm"># 事件上浮与结算：</span>
+forward_stream(outer_A, inner)                          <span class="cm"># lazy.py:52</span>
+ ├─ async for event in inner: outer_A.push(event)        <span class="cm"># 逐层搬运到最外层</span>
+ └─ outer_A.end(await inner.result())
+
+EventStream.push(done_event)                            <span class="cm"># event_stream.py:74</span>
+ ├─ _is_terminal_event(e) → True
+ ├─ self._done = True
+ └─ _settle(_extract_final_message(e))  →  e.message      <span class="cm"># 唤醒所有 _result_waiters ★</span>
+
+await ….result()  →  AssistantMessage(stop_reason="stop",
+                          content=[TextContent(type="text", text="…")], usage=Usage(), …)
+print(message.content[0].text)                           <span class="cm"># example1.py:19</span>
+</code></pre>
+
+  <h3>链 6 · 反向：事件与结果如何回到 <code>example1.py</code></h3>
+<pre><code>openai_responses.run()
+ └─ output_stream.push(done_event(stop_reason, output))     <span class="cm"># 第 3 层流终止</span>
+     └─ EventStream.push → _is_terminal_event → _settle(e.message)
+         ├─ 第 3 层流被 LazyApi 的 forward_stream 消费
+         │   └─ outer_B.push(event) → outer_B.end(await stream3.result())
+         │       └─ 第 2 层流被 ModelsImpl 的 forward_stream 消费
+         │           └─ outer_A.push(event) → outer_A.end(await stream2.result())
+         │               └─ 第 1 层流直接被 example1 的 .result() await ★
+         │                   → 返回 AssistantMessage
+         └─ message.content[0] 为 TextContent → .text 即模型回复
+</code></pre>
+
+  <table>
+    <thead><tr><th>层级</th><th>函数</th><th>输入</th><th>输出</th></tr></thead>
+    <tbody>
+      <tr><td>L5</td><td><code>main()</code></td><td>—</td><td>打印文本</td></tr>
+      <tr><td>L4</td><td><code>ModelsImpl.complete_simple</code></td><td><code>Model</code>, <code>Context</code>, <code>SimpleStreamOptions</code></td><td><code>AssistantMessage</code></td></tr>
+      <tr><td>L4</td><td><code>ModelsImpl._apply_auth</code></td><td>model + options</td><td><code>(request_model, request_options)</code></td></tr>
+      <tr><td>L3</td><td><code>ProviderImpl.stream_simple</code></td><td><code>TranscriptContext</code> + options</td><td><code>AssistantMessageEventStream</code></td></tr>
+      <tr><td>L2</td><td><code>LazyApi.stream_simple</code></td><td>同上传入</td><td><code>AssistantMessageEventStream</code></td></tr>
+      <tr><td>L2</td><td><code>build_base_options</code></td><td><code>Model</code>, transcript, simple options</td><td><code>StreamOptions</code></td></tr>
+      <tr><td>L2</td><td><code>openai_responses.stream</code></td><td><code>OpenAIResponsesOptions</code></td><td><code>AssistantMessageEventStream</code></td></tr>
+      <tr><td>L1</td><td><code>send_streaming_request</code></td><td>client, url, params</td><td><code>httpx.Response</code>（流式）</td></tr>
+      <tr><td>L1</td><td><code>process_responses_stream</code></td><td>SSE dict 迭代器</td><td>改写 <code>output</code> + 推事件</td></tr>
+      <tr><td>L1</td><td><code>EventStream.result</code></td><td>—</td><td>终止值（<code>AssistantMessage</code>）</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section id="s8">
+  <h2><span class="idx">8</span>数据流转图</h2>
+  <p class="sub">跟随「hello」这一个字符串，看它如何变成请求体、再变成回复文本。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 1080 470" role="img" aria-label="数据流转图">
+    <defs>
+      <marker id="ar6" markerWidth="9" markerHeight="9" refX="7.5" refY="3" orient="auto">
+        <path d="M0,0 L7.5,3 L0,6 z" fill="#5b8def"/>
+      </marker>
+    </defs>
+
+    <!-- Row 1 -->
+    <rect x="14" y="20" width="230" height="76" rx="10" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="129" y="42" font-size="11.5" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">Context</text>
+    <text x="129" y="60" font-size="10.3" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">messages=[UserMessage(</text>
+    <text x="129" y="76" font-size="10.3" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">content="hello", timestamp=0)]</text>
+    <text x="129" y="90" font-size="9.8" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">system_prompt=None, tools=None</text>
+
+    <line x1="248" y1="58" x2="296" y2="58" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="272" y="50" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">normalize_</text>
+    <text x="272" y="70" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">context</text>
+
+    <rect x="300" y="20" width="230" height="76" rx="10" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.6"/>
+    <text x="415" y="42" font-size="11.5" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">TranscriptContext</text>
+    <text x="415" y="60" font-size="10.3" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">messages=[UserMessage("hello")]</text>
+    <text x="415" y="78" font-size="9.8" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">prompt/tools 已折叠进 system message</text>
+    <text x="415" y="91" font-size="9.8" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">provider 侧唯一认可的形态</text>
+
+    <line x1="534" y1="58" x2="582" y2="58" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="558" y="50" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">resolve_</text>
+    <text x="558" y="70" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">transcript</text>
+
+    <rect x="586" y="20" width="230" height="76" rx="10" fill="#e8e1fd" stroke="#8b6ff0" stroke-width="1.6"/>
+    <text x="701" y="42" font-size="11.5" text-anchor="middle" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">normalized_context</text>
+    <text x="701" y="60" font-size="10.3" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">按 compat 重放 system message</text>
+    <text x="701" y="78" font-size="10.3" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">得到当前 prompt 与工具集</text>
+
+    <line x1="820" y1="58" x2="868" y2="58" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="844" y="50" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">convert_</text>
+    <text x="844" y="70" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">responses_</text>
+    <text x="844" y="82" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">messages</text>
+
+    <rect x="872" y="20" width="194" height="76" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.6"/>
+    <text x="969" y="44" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">input: [...]</text>
+    <text x="969" y="62" font-size="9.8" text-anchor="middle" fill="#2b3348" font-family="ui-monospace,monospace">Responses 消息数组</text>
+    <text x="969" y="78" font-size="9.8" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">role=user, content=[…]</text>
+    <text x="969" y="91" font-size="9.8" text-anchor="middle" fill="#7b8798" font-family="ui-monospace,monospace">（本例无 tools）</text>
+
+    <!-- Row 2 -->
+    <rect x="14" y="128" width="350" height="96" rx="10" fill="#d9f5e6" stroke="#2fa96b" stroke-width="1.6"/>
+    <text x="189" y="150" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">params（_build_params 产出）</text>
+    <text x="30" y="172" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">{ "model": "deepseek-flash",</text>
+    <text x="30" y="188" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">  "input": [...], "stream": true, "store": false,</text>
+    <text x="30" y="204" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">  "prompt_cache_key": …, "max_output_tokens": … }</text>
+    <text x="30" y="219" font-size="9.8" fill="#7b8798" font-family="ui-monospace,monospace">max_tokens 已经过 context-window 钳制</text>
+    <line x1="969" y1="96" x2="969" y2="114" stroke="#5b8def" stroke-width="1.4"/>
+    <line x1="969" y1="114" x2="189" y2="114" stroke="#5b8def" stroke-width="1.4"/>
+    <line x1="189" y1="114" x2="189" y2="126" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+
+    <line x1="368" y1="176" x2="416" y2="176" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="392" y="168" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">to_json +</text>
+    <text x="392" y="190" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">POST</text>
+
+    <rect x="420" y="128" width="300" height="96" rx="10" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="570" y="150" font-size="11.5" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">httpx POST https://api.deepseek.com/responses</text>
+    <text x="436" y="172" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">Authorization: Bearer sk-…</text>
+    <text x="436" y="188" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">User-Agent: pi-user-agent</text>
+    <text x="436" y="204" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">session_id / x-client-request-id（粘性）</text>
+    <text x="436" y="219" font-size="9.8" fill="#7b8798" font-family="ui-monospace,monospace">stream=True · 非 2xx → ProviderHTTPError → 重试</text>
+
+    <line x1="724" y1="176" x2="772" y2="176" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="748" y="168" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">SSE</text>
+
+    <rect x="776" y="128" width="290" height="96" rx="10" fill="#fdeed2" stroke="#e0a637" stroke-width="1.6"/>
+    <text x="921" y="150" font-size="11.5" text-anchor="middle" fill="#8a5c05" font-family="ui-monospace,monospace" font-weight="700">SSE data: 负载（逐条）</text>
+    <text x="792" y="172" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">data: {"type":"response.output_item.added", …}</text>
+    <text x="792" y="188" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">data: {"type":"response.output_text.delta", …}</text>
+    <text x="792" y="204" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">data: {"type":"response.completed", …}</text>
+    <text x="792" y="219" font-size="9.8" fill="#7b8798" font-family="ui-monospace,monospace">iter_stream_payloads → json.loads（[DONE] 结束）</text>
+
+    <!-- Row 3 -->
+    <rect x="14" y="252" width="440" height="110" rx="10" fill="#fdeed2" stroke="#e0a637" stroke-width="1.6"/>
+    <text x="234" y="274" font-size="11.5" text-anchor="middle" fill="#8a5c05" font-family="ui-monospace,monospace" font-weight="700">process_responses_stream(openai_stream, output, stream, model, opts)</text>
+    <text x="30" y="296" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">① 按 output_index 建槽位 _ResponsesOutputSlot</text>
+    <text x="30" y="312" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">② reasoning → ThinkingContent；推 thinking_* 事件</text>
+    <text x="30" y="328" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">③ message → TextContent；推 text_* 事件（本例主路径）</text>
+    <text x="30" y="344" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">④ function_call → ToolCall；推 tool_call_* 事件</text>
+    <text x="30" y="358" font-size="9.8" fill="#7b8798" font-family="ui-monospace,monospace">⑤ 收敛 usage / stop_reason；服务层级倍率缩放成本</text>
+    <line x1="921" y1="224" x2="921" y2="240" stroke="#5b8def" stroke-width="1.4"/>
+    <line x1="921" y1="240" x2="234" y2="240" stroke="#5b8def" stroke-width="1.4"/>
+    <line x1="234" y1="240" x2="234" y2="250" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+
+    <line x1="458" y1="306" x2="506" y2="306" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="482" y="298" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">就地写入</text>
+
+    <rect x="510" y="252" width="270" height="110" rx="10" fill="#dce9ff" stroke="#5b8def" stroke-width="1.6"/>
+    <text x="645" y="274" font-size="11.5" text-anchor="middle" fill="#17458f" font-family="ui-monospace,monospace" font-weight="700">AssistantMessage（output）</text>
+    <text x="526" y="296" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">api="openai-responses"</text>
+    <text x="526" y="312" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">provider="deepseek"  model="deepseek-flash"</text>
+    <text x="526" y="328" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">content=[TextContent(text="…")]</text>
+    <text x="526" y="344" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">usage=Usage(input/output/cache/cost)</text>
+    <text x="526" y="358" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">stop_reason="stop"</text>
+
+    <line x1="784" y1="306" x2="832" y2="306" stroke="#5b8def" stroke-width="1.6" marker-end="url(#ar6)"/>
+    <text x="808" y="298" font-size="9.3" text-anchor="middle" fill="#5b5570" font-family="ui-monospace,monospace">done_event</text>
+
+    <rect x="836" y="252" width="230" height="110" rx="10" fill="#e2f7ec" stroke="#2fa96b" stroke-width="1.6"/>
+    <text x="951" y="276" font-size="11.5" text-anchor="middle" fill="#0f6b3e" font-family="ui-monospace,monospace" font-weight="700">result() 结算 ★</text>
+    <text x="852" y="300" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">_settle(event.message)</text>
+    <text x="852" y="316" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">唤醒 _result_waiters</text>
+    <text x="852" y="334" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">→ await 返回同一对象</text>
+    <text x="852" y="352" font-size="10.2" fill="#2b3348" font-family="ui-monospace,monospace">→ content[0].text 打印</text>
+
+    <!-- 时序条 -->
+    <rect x="14" y="392" width="1052" height="62" rx="11" fill="#fff" stroke="#8b6ff0" stroke-width="1.5"/>
+    <text x="34" y="414" font-size="11" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">数据形态演进：</text>
+    <text x="152" y="414" font-size="11" fill="#2b3348" font-family="ui-monospace,monospace">Context（应用类型）→ TranscriptContext（规范化）→ dict（params）→ bytes（JSON）→ SSE text</text>
+    <text x="34" y="434" font-size="11" fill="#4a2fae" font-family="ui-monospace,monospace" font-weight="700">事件形态：</text>
+    <text x="120" y="434" font-size="11" fill="#2b3348" font-family="ui-monospace,monospace">start_event → text_start/delta(N)/end → done_event　（全程同一个 AssistantMessage 的 partial 引用）</text>
+    <text x="34" y="451" font-size="10.5" fill="#7b8798" font-family="ui-monospace,monospace">注：TextContent / ThinkingContent / ToolCall 是就地累积到 output.content 上的，事件里的 partial 只是同一对象的引用快照。</text>
+  </svg>
+  <figcaption>图 6 · 数据流转。关键转折点有三处：<code>normalize_context</code>（应用类型 → provider 类型）、<code>_build_params</code>（结构化 → 线格式）、<code>_settle</code>（事件 → 返回值）。</figcaption>
+  </div>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section id="s9">
+  <h2><span class="idx">9</span>关键节点标注总表</h2>
+  <p class="sub">图中带 ★ 的 14 个节点逐一说明——理解这些，就理解了本示例的全部机制。</p>
+
+  <table>
+    <thead><tr><th style="width:34px">#</th><th style="width:220px">节点</th><th>为什么关键</th></tr></thead>
+    <tbody>
+      <tr><td>★1</td><td><code>create_models()</code><br><span class="badge b-purple">models.py:1225</span></td><td>四个协作方（provider 表 / 凭据存储 / 目录存储 / 认证上下文）全部可注入，测试时可用内存实现替换；三个 per-provider 的 dict 是后续并发安全的基础。</td></tr>
+      <tr><td>★2</td><td><code>all_providers()</code> → 9 家工厂<br><span class="badge b-green">providers/all.py:129</span></td><td>provider 列表由 <code>KNOWN_PROVIDERS</code> 单一来源驱动；工厂表缺项会直接报错而不是静默少一家。</td></tr>
+      <tr><td>★3</td><td><code>lazy_api(lazy_load(...))</code><br><span class="badge b-green">providers/deepseek.py:26</span></td><td>只登记 loader、不 import。这是 <code>import pi_ai</code> 保持廉价的原因，也是「首次请求才付加载代价」的机制。</td></tr>
+      <tr><td>★4</td><td><code>_supersede_provider_refresh</code><br><span class="badge b-purple">models.py:465</span></td><td>代次 +1 并 abort 旧刷新；配合 <code>_publish_provider_models</code> 的代次校验，保证「旧刷新结果永不覆盖新状态」。本次示例未触发刷新，但机制在此挂载。</td></tr>
+      <tr><td>★5</td><td><code>_current_models()</code> 两层合并<br><span class="badge b-purple">models.py:1319</span></td><td>静态 JSON 基线 + 动态刷新覆盖层。类型与 id 双匹配才替换，避免不同 api 的同名模型互相污染。</td></tr>
+      <tr><td>★6</td><td><code>normalize_context()</code><br><span class="badge b-rose">transcript.py:75</span></td><td>生成 <code>TranscriptContext</code> 的<b>唯一入口</b>且幂等；把 <code>system_prompt</code>/<code>tools</code> 折叠为前导 system message 后，provider 侧只需读 <code>messages</code>。</td></tr>
+      <tr><td>★7</td><td><code>lazy_stream()</code> 第 1 层<br><span class="badge b-amber">api/lazy.py:68</span></td><td>同步返回 + <code>ensure_future(run())</code>。初始化失败被编码为 <code>error</code> 事件而非异常——这是整个 SDK 「错误统一走流协议」的源头。</td></tr>
+      <tr><td>★8</td><td><code>_apply_auth()</code><br><span class="badge b-purple">models.py:985</span></td><td>认证注入的唯一收口：解析 → 合并 api_key/headers/env → 必要时 <code>replace(model, base_url=…)</code>。显式 options 优先于解析结果。</td></tr>
+      <tr><td>★9</td><td><code>resolve_provider_auth</code> 三级优先<br><span class="badge b-teal">auth/resolve.py:44</span></td><td>顺序为 <b>overrides.api_key &gt; 已存储 credential &gt; 环境变量</b>。本示例因显式传 key 而直接命中第 1 级，<code>DEEPSEEK_API_KEY</code> 与环境凭据都没被读取。</td></tr>
+      <tr><td>★10</td><td><code>build_base_options</code> / <code>clamp_max_tokens_to_context</code><br><span class="badge b-amber">api/simple_options.py:68 / 51</span></td><td>把 provider 无关选项投影为具体选项，并把 <code>max_tokens</code> 钳到 <code>context_window - 估算tokens - 4096</code>，从根本上避免请求超窗。</td></tr>
+      <tr><td>★11</td><td><code>LazyApi.stream_simple</code> 第 2 层<br><span class="badge b-amber">api/lazy.py:167</span></td><td>真正触发 <code>importlib.import_module("pi_ai.api.openai_responses")</code> 的位置。</td></tr>
+      <tr><td>★12</td><td><code>send_streaming_request</code><br><span class="badge b-teal">openai_responses_shared.py:326</span></td><td><code>client.send(request, stream=True)</code> 只等到响应头；非 2xx 立即读空 + 关闭 + 抛 <code>ProviderHTTPError</code>，把「是否重试」的决定权交给外层的 <code>retry_provider_request</code>。</td></tr>
+      <tr><td>★13</td><td><code>process_responses_stream</code><br><span class="badge b-teal">openai_responses_shared.py:996</span></td><td>SSE dict → <code>AssistantMessage</code> 的折叠器：按 <code>output_index</code> 建槽位、按 <code>item.type</code> 分流、就地累积内容块并同步推事件。</td></tr>
+      <tr><td>★14</td><td><code>EventStream._settle</code> / <code>result()</code><br><span class="badge b-blue">utils/event_stream.py:150 / 119</span></td><td><code>done_event</code> 被 push 时同时「标记流结束 + 结算结果」。<code>result()</code> 返回可 await 对象而非协程，因此可以先立即取到 future、稍后再 await——正是 <code>complete_simple</code> 里 <code>stream_simple(...).result()</code> 能成立的原因。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>易踩的五个坑</h3>
+  <ul class="tight">
+    <li><b>别以为 <code>complete_simple</code> 是 async 网络调用</b>——它内部是「同步取流 + await 结果」。异常因此优先表现为 <code>AssistantMessage.stop_reason == "error"</code>，而不是 <code>raise</code>。要判断失败必须检查 <code>stop_reason</code> / <code>error_message</code>。</li>
+    <li><b><code>api_key</code> 只走 <code>SimpleStreamOptions</code>，不写进环境变量时也能生效</b>，因为 <code>resolve_provider_auth</code> 的第 1 优先级就是 overrides。反过来，一旦传了 key，provider 自带的 <code>DEEPSEEK_API_KEY</code> 就被完全绕过。</li>
+    <li><b><code>base_url</code> 有两处来源</b>：provider 的 <code>CreateProviderOptions.base_url</code>（本例 <code>https://api.deepseek.com</code>）与模型目录里的 <code>baseUrl</code>。运行时实际用的是 <code>model.base_url</code>（<code>join_url</code> 的入参），除非认证解析显式返回了 <code>auth.base_url</code>。</li>
+    <li><b>三层 event stream 会让调用栈变深</b>。排错时不要只看 <code>openai_responses</code>，要顺着 <code>push → forward_stream → _settle → result</code> 检查事件是否真的上浮到了最外层。</li>
+    <li><b>只有 <code>chat</code> 类型模型会被 <code>get_model</code> 找到</b>；<code>get_models_of_type</code> / <code>get_all_models</code> 才是全类型入口。本项目已裁掉 image / classifier 目录。</li>
+  </ul>
+
+  <div class="callout key">
+    <b>一句话复述整体机制：</b><code>create_models()</code> 装好一个空注册表 → <code>all_providers()</code> 造 9 个「只带惰性代理」的 <code>ProviderImpl</code> → <code>set_provider()</code> 把它们放进按 id 索引的字典 →
+    <code>get_model()</code> 从静态 JSON 目录里取出 <code>deepseek-flash</code> →
+    <code>complete_simple()</code> 用 <code>normalize_context</code> 规范化上下文、用 <code>_apply_auth</code> 注入认证、经三层 <code>lazy_stream</code> 把请求一路惰性下传到 <code>openai_responses</code>、
+    由 <code>send_streaming_request</code> 发出 POST、由 <code>process_responses_stream</code> 把 SSE 折叠成 <code>AssistantMessage</code>、最后由 <code>done_event</code> 触发 <code>_settle</code> 结算 <code>.result()</code>，
+    把 <code>content[0].text</code> 交回给 <code>print</code>。
+  </div>
+</section>
+
+<footer>
+  基于 <code>packages/ai</code> 源码（pi-ai 0.1.0，20 664 行 Python）逐文件核读生成 ·
+  示意图为手绘 SVG，无外部依赖，可离线查看 · 行号引用以本仓库当前版本为准
+</footer>
+
+</div>
+</body>
+</html>
+
